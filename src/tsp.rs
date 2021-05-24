@@ -61,7 +61,7 @@ macro_rules! impl_disp_enum {
 /// 
 /// The following example shows how to parse a TSP data from string with [`TspBuilder::parse_str`]:
 ///
-/// ```
+/// ```no_run
 /// let s = "
 /// NAME: test
 /// TYPE: TSP
@@ -82,7 +82,7 @@ macro_rules! impl_disp_enum {
 ///
 /// We can also parse a file by calling the function [`TspBuilder::parse_path`]:
 ///
-/// ```
+/// ```no_run
 /// let path = Path::new("./test.tsp");
 /// let result = TspBuilder::parse_path(path);
 /// assert!(result.is_ok());
