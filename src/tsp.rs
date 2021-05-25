@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
@@ -34,7 +35,7 @@ macro_rules! impl_disp_enum {
 ///
 /// TSP format has two parts:
 /// - *Specification part*: contains metadata and general information about the dataset.
-/// - *Data part*: contains all data.
+/// - *Data part*: contains all data stored according to the formats given in the specification part.
 ///
 /// # Format
 /// The *specification part* has the following entries:
@@ -56,12 +57,23 @@ macro_rules! impl_disp_enum {
 /// purpose is given in the file. Represented by the enum [`DisplayKind`].
 ///
 /// The *data part* has the following entries:
-/// - ```NODE_COORD_SECTION```: 
+/// - ```NODE_COORD_SECTION``` (required if ```NODE_COORD_TYPE``` is not [`CoordKind::NoCoord`]):
+/// a list of node coordinates.
+/// - ```DEPOT_SECTION```: *not yet implemented*.
+/// - ```DEMAND_SECTION```: *not yet implemented*.
+/// - ```EDGE_DATA_SECTION```: *not yet implemented*.
+/// - ```FIXED_EDGES_SECTION``` (optional): a list of edges that must be included in solutions to the problem.
+/// - ```DISPLAY_DATA_SECTION``` (required if ```DISPLAY_DATA_TYPE``` is [`DisplayKind::Disp2d`]):
+/// a list of 2D node coordinates for display purpose.
+/// - ```TOUR_SECTION```: *not yet implemented*.
+/// - ```EDGE_WEIGHT_SECTION```(optional if ```EDGE_WEIGHT_FORMAT``` is [`WeightFormat::Function`]):
+///  node coordinates in a matrix form as dictated in ```EDGE_WEIGHT_FORMAT```.
+///
 /// # Example
-/// 
+///
 /// The following example shows how to parse a TSP data from string with [`TspBuilder::parse_str`]:
 ///
-/// ```no_run
+/// ```ignore
 /// let s = "
 /// NAME: test
 /// TYPE: TSP
@@ -82,39 +94,65 @@ macro_rules! impl_disp_enum {
 ///
 /// We can also parse a file by calling the function [`TspBuilder::parse_path`]:
 ///
-/// ```no_run
+/// ```ignore
 /// let path = Path::new("./test.tsp");
 /// let result = TspBuilder::parse_path(path);
 /// assert!(result.is_ok());
 /// ```
 #[derive(Debug)]
 pub struct Tsp {
-    /// Name of the dataset. Maps to the entry ```NAME``` in a TSP file.
+    /// Name of the dataset.
+    ///
+    /// Maps to the entry ```NAME``` in the TSP format.
     name: String,
-    /// Type specifier of the datset. Maps to the entry ```TYPE``` in a TSP file.
+    /// Type specifier of the dataset.
+    ///
+    /// Maps to the entry ```TYPE``` in the TSP format.
     kind: TspKind,
     /// Additional comments.
+    ///
+    /// Maps to the entry ```COMMENT``` in the TSP format.
     comment: Option<String>,
     /// The dimension of a dataset.
+    ///
+    /// Maps to the entry ```DIMENSION``` in the TSP format.
     dim: usize,
-    /// Maps to the entry ```EDGE_WEIGHT_TYPE``` in a TSP file.
+    /// Specifier for how the edge weights are calculated.
+    ///
+    /// Maps to the entry ```EDGE_WEIGHT_TYPE``` in the TSP format.
     weight_kind: WeightKind,
-    /// Maps to the entry ```EDGE_WEIGHT_FORMAT``` in a TSP file.
+    /// Specifier for how the edge weights are stored in a file.
+    ///
+    /// Maps to the entry ```EDGE_WEIGHT_FORMAT``` in the TSP format.
     weight_format: WeightFormat,
-    /// Maps to the entry ```EDGE_DATA_FORMAT``` in a TSP file.
+    /// Specifier for how the edges are stored in a file.
+    ///
+    /// Maps to the entry ```EDGE_DATA_FORMAT``` in the TSP format.
     edge_format: EdgeFormat,
-    /// Maps to the entry ```NODE_COORD_TYPE``` in a TSP file.
+    /// Specifier for how the node coordinates are stored in a file.
+    ///
+    /// Maps to the entry ```NODE_COORD_TYPE``` in the TSP format.
     coord_kind: CoordKind,
-    /// Maps to the entry ```DISPLAY_DATA_TYPE``` in a TSP file.
+    /// Specifier for how node coordinates for display purpose are stored in a file.
+    ///
+    /// Maps to the entry ```DISPLAY_DATA_TYPE``` in the TSP format.
     disp_kind: DisplayKind,
-
+    /// Vector of node coordinates, if available.
+    ///
+    /// Maps to the entry ```NODE_COORD_SECTION``` in the TSP format.
     node_coords: Option<Vec<Point>>,
-
-    edge_weights: Option<Vec<Vec<f64>>>,
-
-    disp_coords: Option<Vec<Point>>,
-
+    /// Vector of edges that *must* appear in solutions to the problem.
+    ///
+    /// Maps to the entry ```FIXED_EDGES_SECTION``` in the TSP format.
     fixed_edges: Option<Vec<(usize, usize)>>,
+    /// A vector of 2D node coordinates for display purpose, if available.
+    ///
+    /// Maps to the entry ```DISPLAY_DATA_SECTION``` in the TSP format.
+    disp_coords: Option<Vec<Point>>,
+    /// Edge weights in a matrix form as stated in ```EDGE_WEIGHT_FORMAT```, if available.
+    ///
+    /// Maps to the entry ```EDGE_WEIGHT_SECTION``` in the TSP format.
+    edge_weights: Option<Vec<Vec<f64>>>,
 }
 
 impl Tsp {
@@ -138,12 +176,12 @@ impl Tsp {
         self.dim
     }
 
-    /// Return the enum indicating how the weights calculated or given.
+    /// Return the enum indicating how the edge weights calculated or given.
     pub fn weight_kind(&self) -> WeightKind {
         self.weight_kind
     }
 
-    /// Returns the enum indicating how the weights are stored in a file.
+    /// Returns the enum indicating how the edge weights are stored in a file.
     pub fn weight_format(&self) -> WeightFormat {
         self.weight_format
     }
@@ -158,7 +196,47 @@ impl Tsp {
         self.disp_kind
     }
 
+    /// Returns the vector of node coordinates.
+    pub fn node_coords(&self) -> Option<&Vec<Point>> {
+        self.node_coords.as_ref()
+    }
 
+    /// Returns the vector of fixed edges.
+    pub fn fixed_edges(&self) -> Option<&Vec<(usize, usize)>> {
+        self.fixed_edges.as_ref()
+    }
+
+    /// Returns the vector of node coordinates for display purpose.
+    pub fn disp_coords(&self) -> Option<&Vec<Point>> {
+        self.disp_coords.as_ref()
+    }
+
+    /// Returns the matrix of edge weights.
+    pub fn edge_weights(&self) -> Option<&Vec<Vec<f64>>> {
+        self.edge_weights.as_ref()
+    }
+}
+
+impl Display for Tsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Spec: {name} {kind} {dim} {wkind} {wformat} {eformat} {ckind} {dkind}\n
+            Data: {coord:?} {eweights:?} {dcoord:?} {fedges:?}",
+            name = self.name,
+            kind = self.kind,
+            dim = self.dim,
+            wkind = self.weight_kind,
+            wformat = self.weight_format,
+            eformat = self.edge_format,
+            ckind = self.coord_kind,
+            dkind = self.disp_kind,
+            coord = self.node_coords,
+            eweights = self.edge_weights,
+            dcoord = self.disp_coords,
+            fedges = self.fixed_edges,
+        )
+    }
 }
 
 /// Responsible for constructing an instance of [`Tsp`].
@@ -296,7 +374,7 @@ impl TspBuilder {
 
         let mut func: Box<dyn FnMut(&Vec<&str>, &mut Vec<Point>)> = match &self.coord_kind.unwrap()
         {
-            CoordKind::Coo2d => {
+            CoordKind::Coord2d => {
                 let f = |v: &Vec<&str>, r: &mut Vec<Point>| {
                     let p = Point::from((
                         v[0].parse::<usize>().unwrap(),
@@ -308,7 +386,7 @@ impl TspBuilder {
                 };
                 Box::new(f)
             }
-            CoordKind::Coo3d => {
+            CoordKind::Coord3d => {
                 let f = |v: &Vec<&str>, r: &mut Vec<Point>| {
                     let p = Point::from((
                         v[0].parse::<usize>().unwrap(),
@@ -321,7 +399,7 @@ impl TspBuilder {
                 };
                 Box::new(f)
             }
-            CoordKind::NoCoo | CoordKind::Undefined => {
+            CoordKind::NoCoord | CoordKind::Undefined => {
                 unimplemented!()
             }
         };
@@ -517,9 +595,15 @@ impl TspBuilder {
     }
 }
 
+/// Represents a node coordinate.
+///
+/// The enum has two variants. The first field in each variant is the id of a node in the dataset.
+/// The last two (or three) fields corresponds to a node coordinate in two (or three) dimensions.
 #[derive(Debug)]
-enum Point {
-    TwoD(usize, f64, f64),
+pub enum Point {
+    /// Two-dimensional coordinate.
+    TwoD (usize, f64, f64),
+    /// Three-dimensional coordinate.
     ThreeD(usize, f64, f64, f64),
 }
 
@@ -535,6 +619,7 @@ impl From<(usize, f64, f64, f64)> for Point {
     }
 }
 
+/// Enum for TSP's variants.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum TspKind {
     /// Represents a symmetric travelling salesman problem.
@@ -568,6 +653,7 @@ impl From<&str> for TspKind {
     }
 }
 
+/// Specifies how edge weights should be calculated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum WeightKind {
     /// Weights are explicitly given in the data file.
@@ -622,6 +708,7 @@ impl From<&str> for WeightKind {
     }
 }
 
+/// Specifies how edge weights are stored in a file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum WeightFormat {
     /// Weights are calculated by the function stated in [WeightKind].
@@ -667,6 +754,7 @@ impl From<&str> for WeightFormat {
 
 impl_disp_enum!(WeightFormat);
 
+/// Specifies how list of edges are stored in a file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum EdgeFormat {
     EdgeList,
@@ -686,20 +774,21 @@ impl From<&str> for EdgeFormat {
 
 impl_disp_enum!(EdgeFormat);
 
+/// Specifies how node coordinates are stored in a file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum CoordKind {
-    Coo2d,
-    Coo3d,
-    NoCoo,
+    Coord2d,
+    Coord3d,
+    NoCoord,
     Undefined,
 }
 
 impl From<&str> for CoordKind {
     fn from(s: &str) -> Self {
         match s {
-            "TWOD_COORDS" => Self::Coo2d,
-            "THREED_COORDS" => Self::Coo3d,
-            "NO_COORDS" => Self::NoCoo,
+            "TWOD_COORDS" => Self::Coord2d,
+            "THREED_COORDS" => Self::Coord3d,
+            "NO_COORDS" => Self::NoCoord,
             _ => Self::Undefined,
         }
     }
@@ -712,8 +801,8 @@ impl From<WeightKind> for CoordKind {
             | WeightKind::Max2d
             | WeightKind::Man2d
             | WeightKind::Ceil2d
-            | WeightKind::Geo => Self::Coo2d,
-            WeightKind::Euc3d | WeightKind::Max3d | WeightKind::Man3d => Self::Coo3d,
+            | WeightKind::Geo => Self::Coord2d,
+            WeightKind::Euc3d | WeightKind::Max3d | WeightKind::Man3d => Self::Coord3d,
             _ => Self::Undefined,
         }
     }
@@ -721,6 +810,7 @@ impl From<WeightKind> for CoordKind {
 
 impl_disp_enum!(CoordKind);
 
+/// Specifies how node coordinates for display purpose are stored in a file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum DisplayKind {
     DispCoo,
