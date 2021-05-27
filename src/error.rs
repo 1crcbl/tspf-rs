@@ -5,6 +5,7 @@ pub enum ParseTspError {
     IoError(std::io::Error),
     MissingEntry(String),
     InvalidEntry(String),
+    InvalidInput { key: String, val: String },
 }
 
 impl From<std::io::Error> for ParseTspError {
@@ -19,6 +20,9 @@ impl Display for ParseTspError {
             Self::IoError(e) => write!(f, "{}", format!("IO error: {}", e.to_string())),
             Self::MissingEntry(e) => write!(f, "{}", format!("Missing entry: {}", e)),
             Self::InvalidEntry(e) => write!(f, "{}", format!("Invalid entry: {}", e)),
+            ParseTspError::InvalidInput { key, val } => {
+                write!(f, "{}", format!("Invalid input {} : {}", key, val))
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 #![allow(unused_imports, dead_code)]
-use std::path::Path;
+use std::{ffi::OsStr, path::Path};
 
 use crate::{TspBuilder, TspKind, WeightKind};
 

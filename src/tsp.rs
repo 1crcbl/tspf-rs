@@ -1,4 +1,5 @@
 use std::{
+    convert::TryFrom,
     fmt::Display,
     fs::File,
     io::{BufRead, BufReader},
@@ -13,6 +14,9 @@ static K_TYPE: &str = "TYPE";
 static K_DIM: &str = "DIMENSION";
 static K_WEIGHT_TYPE: &str = "EDGE_WEIGHT_TYPE";
 static K_WEIGHT_FORMAT: &str = "EDGE_WEIGHT_FORMAT";
+static K_EDGE_FORMAT: &str = "EDGE_DATA_FORMAT";
+static K_NODE_COORD_TYPE: &str = "NODE_COORD_TYPE";
+static K_DISP_TYPE: &str = "DISPLAY_DATA_TYPE";
 
 // (Some) keywords for the data part.
 static K_NODE_COORD_SEC: &str = "NODE_COORD_SECTION";
@@ -366,7 +370,7 @@ impl TspBuilder {
             if line.starts_with(K_NAME) {
                 builder.name = Some(splitter(&line));
             } else if line.starts_with(K_TYPE) {
-                builder.kind = Some(TspKind::from(splitter(&line).as_str()));
+                builder.kind = Some(TspKind::try_from(InputWrapper(splitter(&line).as_str()))?);
             } else if line.starts_with("COMMENT") {
                 // TODO: multiple-line comments?
                 builder.comment = Some(splitter(&line));
@@ -375,17 +379,24 @@ impl TspBuilder {
             } else if line.starts_with("CAPACITY") {
                 todo!()
             } else if line.starts_with(K_WEIGHT_TYPE) {
-                let kind = WeightKind::from(splitter(&line).as_str());
+                let kind = WeightKind::try_from(InputWrapper(splitter(&line).as_str()))?;
                 builder.weight_kind = Some(kind.clone());
                 builder.coord_kind = Some(CoordKind::from(kind));
             } else if line.starts_with(K_WEIGHT_FORMAT) {
-                builder.weight_format = Some(WeightFormat::from(splitter(&line).as_str()));
-            } else if line.starts_with("EDGE_DATA_FORMAT") {
-                builder.edge_format = Some(EdgeFormat::from(splitter(&line).as_str()));
-            } else if line.starts_with("NODE_COORD_TYPE") {
-                builder.coord_kind = Some(CoordKind::from(splitter(&line).as_str()));
-            } else if line.starts_with("DISPLAY_DATA_TYPE") {
-                builder.disp_kind = Some(DisplayKind::from(splitter(&line).as_str()));
+                builder.weight_format = Some(WeightFormat::try_from(InputWrapper(
+                    splitter(&line).as_str(),
+                ))?);
+            } else if line.starts_with(K_EDGE_FORMAT) {
+                builder.edge_format = Some(EdgeFormat::try_from(InputWrapper(
+                    splitter(&line).as_str(),
+                ))?);
+            } else if line.starts_with(K_NODE_COORD_TYPE) {
+                builder.coord_kind =
+                    Some(CoordKind::try_from(InputWrapper(splitter(&line).as_str()))?);
+            } else if line.starts_with(K_DISP_TYPE) {
+                builder.disp_kind = Some(DisplayKind::try_from(InputWrapper(
+                    splitter(&line).as_str(),
+                ))?);
             } else if line.starts_with(K_NODE_COORD_SEC) {
                 builder.parse_node_coord_section(itr)?;
             } else if line.starts_with("DEPOT_SECTION") {
@@ -393,9 +404,9 @@ impl TspBuilder {
             } else if line.starts_with("DEMAND_SECTION") {
                 todo!()
             } else if line.starts_with("EDGE_DATA_SECTION") {
-                todo!()
+                builder.parse_edge_data_section(itr)?;
             } else if line.starts_with("FIXED_EDGES_SECTION") {
-                builder.parse_fixed_edge_section(itr)?;
+                builder.parse_fixed_edges_section(itr)?;
             } else if line.starts_with("DISPLAY_DATA_SECTION") {
                 builder.parse_display_data_section(itr)?;
             } else if line.starts_with("TOUR_SECTION") {
@@ -473,7 +484,38 @@ impl TspBuilder {
         Ok(())
     }
 
-    fn parse_fixed_edge_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
+    /// Parses the ```EDGE_DATA_SECTION```.
+    fn parse_edge_data_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
+    where
+        I: Iterator,
+        <I as Iterator>::Item: AsRef<str>,
+    {
+        let mut dta = Vec::new();
+
+        match self.edge_format.as_mut().unwrap() {
+            EdgeFormat::EdgeList(v) => {
+                loop {
+                    let line = lines_it.next().unwrap();
+                    if line.as_ref().trim().starts_with("-1") {
+                        break;
+                    }
+
+                    let mut it = line.as_ref().trim().split_whitespace();
+                    if let (Some(f), Some(l)) = (it.next(), it.next()) {
+                        dta.push((f.parse::<usize>().unwrap(), l.parse::<usize>().unwrap()));
+                    }
+                }
+
+                v.append(&mut dta);
+            }
+            EdgeFormat::AdjList => todo!(),
+            EdgeFormat::Undefined => Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))?,
+        }
+
+        Ok(())
+    }
+
+    fn parse_fixed_edges_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
     where
         I: Iterator,
         <I as Iterator>::Item: AsRef<str>,
@@ -578,27 +620,71 @@ impl TspBuilder {
         Ok(())
     }
 
+    /// Validates the specification part.
     fn validate_spec(&self) -> Result<(), ParseTspError> {
         if self.name.is_none() {
             return Err(ParseTspError::MissingEntry(String::from(K_NAME)));
         }
 
-        if self.kind.is_none() {
-            return Err(ParseTspError::MissingEntry(String::from(K_TYPE)));
+        match self.kind {
+            Some(kind) => match kind {
+                TspKind::Tsp => match self.weight_kind {
+                    Some(wk) => match wk {
+                        WeightKind::Undefined => {
+                            Err(ParseTspError::InvalidEntry(String::from(K_WEIGHT_TYPE)))?
+                        }
+                        _ => {}
+                    },
+                    None => Err(ParseTspError::MissingEntry(String::from(K_WEIGHT_TYPE)))?,
+                },
+                TspKind::Atsp => todo!("Parser for ATSP has not been implemented yet."),
+                TspKind::Sop => todo!("Parser for SOP has not been implemented yet."),
+                TspKind::Hcp => match self.edge_format {
+                    Some(ref ef) => match ef {
+                        EdgeFormat::Undefined => {
+                            Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))?
+                        }
+                        _ => {}
+                    },
+                    None => Err(ParseTspError::MissingEntry(String::from(K_EDGE_FORMAT)))?,
+                },
+                TspKind::Cvrp => todo!("Parser for CVRP has not been implemented yet."),
+                TspKind::Tour => todo!("Parser for TOUR has not been implemented yet."),
+                TspKind::Undefined => Err(ParseTspError::InvalidEntry(String::from(K_TYPE)))?,
+            },
+            None => Err(ParseTspError::MissingEntry(String::from(K_TYPE)))?,
         }
 
         if self.dim.is_none() {
             return Err(ParseTspError::MissingEntry(String::from(K_DIM)));
         }
 
-        if self.weight_kind.is_none() {
-            return Err(ParseTspError::MissingEntry(String::from(K_WEIGHT_TYPE)));
-        }
-
         Ok(())
     }
 
+    /// Validates the data part.
     fn validate_data(&self) -> Result<(), ParseTspError> {
+        match self.kind.unwrap() {
+            TspKind::Tsp => match self.weight_kind.unwrap() {
+                WeightKind::Explicit => {
+                    if self.edge_weights.is_none() {
+                        Err(ParseTspError::MissingEntry(String::from(K_EDGE_WEIGHT_SEC)))?
+                    }
+                }
+                _ => {
+                    if self.coords.is_none() {
+                        Err(ParseTspError::MissingEntry(String::from(K_NODE_COORD_SEC)))?
+                    }
+                }
+            },
+            TspKind::Atsp => {}
+            TspKind::Sop => {}
+            TspKind::Hcp => {}
+            TspKind::Cvrp => {}
+            TspKind::Tour => {}
+            TspKind::Undefined => {}
+        }
+
         if self.weight_kind.is_some() {
             match self.weight_kind.unwrap() {
                 WeightKind::Explicit => {
@@ -628,7 +714,7 @@ impl TspBuilder {
             kind: self.kind.unwrap(),
             comment: self.comment,
             dim: self.dim.unwrap(),
-            weight_kind: self.weight_kind.unwrap(),
+            weight_kind: self.weight_kind.unwrap_or(WeightKind::Undefined),
             weight_format: self.weight_format.unwrap_or(WeightFormat::Undefined),
             edge_format: self.edge_format.unwrap_or(EdgeFormat::Undefined),
             coord_kind: self.coord_kind.unwrap_or(CoordKind::Undefined),
@@ -641,8 +727,11 @@ impl TspBuilder {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct InputWrapper<T>(T);
+
 /// Represents a node coordinate.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Point {
     /// Id of a point.
     id: usize,
@@ -709,10 +798,33 @@ pub enum TspKind {
     Cvrp,
     /// A collection of tours.
     Tour,
+    /// The type of problem is not available.
     Undefined,
 }
 
 impl_disp_enum!(TspKind);
+
+impl<T> TryFrom<InputWrapper<T>> for TspKind
+where
+    T: AsRef<str>,
+{
+    type Error = ParseTspError;
+
+    fn try_from(value: InputWrapper<T>) -> Result<Self, Self::Error> {
+        match value.0.as_ref() {
+            "TSP" => Ok(Self::Tsp),
+            "ATSP" => Ok(Self::Atsp),
+            "SOP" => Ok(Self::Sop),
+            "HCP" => Ok(Self::Hcp),
+            "CVRP" => Ok(Self::Cvrp),
+            "TOUR" => Ok(Self::Tour),
+            _ => Err(ParseTspError::InvalidInput {
+                key: K_TYPE.to_string(),
+                val: value.0.as_ref().to_string(),
+            }),
+        }
+    }
+}
 
 impl From<&str> for TspKind {
     fn from(s: &str) -> Self {
@@ -757,6 +869,7 @@ pub enum WeightKind {
     Xray2,
     /// The distance function is defined outside the scope of the data file.
     Custom,
+    /// The distance function is undefined or not available.
     Undefined,
 }
 
@@ -779,6 +892,35 @@ impl From<&str> for WeightKind {
             "XRAY2" => Self::Xray2,
             "SPECIAL" => Self::Custom,
             _ => Self::Undefined,
+        }
+    }
+}
+
+impl<T> TryFrom<InputWrapper<T>> for WeightKind
+where
+    T: AsRef<str>,
+{
+    type Error = ParseTspError;
+
+    fn try_from(value: InputWrapper<T>) -> Result<Self, Self::Error> {
+        match value.0.as_ref() {
+            "EXPLICIT" => Ok(Self::Explicit),
+            "EUC_2D" => Ok(Self::Euc2d),
+            "EUC_3D" => Ok(Self::Euc3d),
+            "MAX_2D" => Ok(Self::Max2d),
+            "MAX_3D" => Ok(Self::Max3d),
+            "MAN_2D" => Ok(Self::Man2d),
+            "MAN_3D" => Ok(Self::Man3d),
+            "CEIL_2D" => Ok(Self::Ceil2d),
+            "GEO" => Ok(Self::Geo),
+            "ATT" => Ok(Self::Att),
+            "XRAY1" => Ok(Self::Xray1),
+            "XRAY2" => Ok(Self::Xray2),
+            "SPECIAL" => Ok(Self::Custom),
+            _ => Err(ParseTspError::InvalidInput {
+                key: K_WEIGHT_TYPE.to_string(),
+                val: value.0.as_ref().to_string(),
+            }),
         }
     }
 }
@@ -806,6 +948,7 @@ pub enum WeightFormat {
     UpperColDiag,
     /// Weights are given in a lower triangular matrix, col-wise with diagonal entries.
     LowerColDiag,
+    /// No information how weights are stored.
     Undefined,
 }
 
@@ -827,12 +970,38 @@ impl From<&str> for WeightFormat {
     }
 }
 
+impl<T> TryFrom<InputWrapper<T>> for WeightFormat
+where
+    T: AsRef<str>,
+{
+    type Error = ParseTspError;
+
+    fn try_from(value: InputWrapper<T>) -> Result<Self, Self::Error> {
+        match value.0.as_ref() {
+            "FUNCTION" => Ok(Self::Function),
+            "FULL_MATRIX" => Ok(Self::FullMatrix),
+            "UPPER_ROW" => Ok(Self::UpperRow),
+            "LOWER_ROW" => Ok(Self::LowerRow),
+            "UPPER_DIAG_ROW" => Ok(Self::UpperRowDiag),
+            "LOWER_DIAG_ROW" => Ok(Self::LowerRowDiag),
+            "UPPER_COL" => Ok(Self::UpperCol),
+            "LOWER_COL" => Ok(Self::LowerCol),
+            "UPPER_DIAG_COL" => Ok(Self::UpperColDiag),
+            "LOWER_DIAG_COL" => Ok(Self::LowerColDiag),
+            _ => Err(ParseTspError::InvalidInput {
+                key: K_WEIGHT_FORMAT.to_string(),
+                val: value.0.as_ref().to_string(),
+            }),
+        }
+    }
+}
+
 impl_disp_enum!(WeightFormat);
 
 /// Specifies how list of edges are stored in a file.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum EdgeFormat {
-    EdgeList,
+    EdgeList(Vec<(usize, usize)>),
     AdjList,
     Undefined,
 }
@@ -840,9 +1009,27 @@ pub enum EdgeFormat {
 impl From<&str> for EdgeFormat {
     fn from(s: &str) -> Self {
         match s {
-            "EDGE_LIST" => Self::EdgeList,
+            "EDGE_LIST" => Self::EdgeList(Vec::new()),
             "ADJ_LIST" => Self::AdjList,
             _ => Self::Undefined,
+        }
+    }
+}
+
+impl<T> TryFrom<InputWrapper<T>> for EdgeFormat
+where
+    T: AsRef<str>,
+{
+    type Error = ParseTspError;
+
+    fn try_from(value: InputWrapper<T>) -> Result<Self, Self::Error> {
+        match value.0.as_ref() {
+            "EDGE_LIST" => Ok(Self::EdgeList(Vec::new())),
+            "ADJ_LIST" => Ok(Self::AdjList),
+            _ => Err(ParseTspError::InvalidInput {
+                key: K_EDGE_FORMAT.to_string(),
+                val: value.0.as_ref().to_string(),
+            }),
         }
     }
 }
@@ -852,9 +1039,13 @@ impl_disp_enum!(EdgeFormat);
 /// Specifies how node coordinates are stored in a file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum CoordKind {
+    /// Two-dimensional coordinates.
     Coord2d,
+    /// Three-dimensional coordinates.
     Coord3d,
+    /// No coordinates.
     NoCoord,
+    /// Type of node coordinates is undefined.
     Undefined,
 }
 
@@ -869,6 +1060,25 @@ impl From<&str> for CoordKind {
     }
 }
 
+impl<T> TryFrom<InputWrapper<T>> for CoordKind
+where
+    T: AsRef<str>,
+{
+    type Error = ParseTspError;
+
+    fn try_from(value: InputWrapper<T>) -> Result<Self, Self::Error> {
+        match value.0.as_ref() {
+            "TWOD_COORDS" => Ok(Self::Coord2d),
+            "THREED_COORDS" => Ok(Self::Coord3d),
+            "NO_COORDS" => Ok(Self::NoCoord),
+            _ => Err(ParseTspError::InvalidInput {
+                key: K_NODE_COORD_TYPE.to_string(),
+                val: value.0.as_ref().to_string(),
+            }),
+        }
+    }
+}
+
 impl From<WeightKind> for CoordKind {
     fn from(kind: WeightKind) -> Self {
         match kind {
@@ -876,7 +1086,8 @@ impl From<WeightKind> for CoordKind {
             | WeightKind::Max2d
             | WeightKind::Man2d
             | WeightKind::Ceil2d
-            | WeightKind::Geo => Self::Coord2d,
+            | WeightKind::Geo
+            | WeightKind::Att => Self::Coord2d,
             WeightKind::Euc3d | WeightKind::Max3d | WeightKind::Man3d => Self::Coord3d,
             _ => Self::Undefined,
         }
@@ -888,9 +1099,13 @@ impl_disp_enum!(CoordKind);
 /// Specifies how node coordinates for display purpose are stored in a file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum DisplayKind {
+    /// Display coordinates are based on node coordinates.
     DispCoo,
+    /// Two-dimensional coordinates are explicitly given.
     Disp2d,
+    /// No display.
     NoDisp,
+    /// No information about how to display coordinates.
     Undefined,
 }
 
@@ -901,6 +1116,25 @@ impl From<&str> for DisplayKind {
             "TWOD_DISPLAY" => Self::Disp2d,
             "NO_DISPLAY" => Self::NoDisp,
             _ => Self::Undefined,
+        }
+    }
+}
+
+impl<T> TryFrom<InputWrapper<T>> for DisplayKind
+where
+    T: AsRef<str>,
+{
+    type Error = ParseTspError;
+
+    fn try_from(value: InputWrapper<T>) -> Result<Self, Self::Error> {
+        match value.0.as_ref() {
+            "COORD_DISPLAY" => Ok(Self::DispCoo),
+            "TWOD_DISPLAY" => Ok(Self::Disp2d),
+            "NO_DISPLAY" => Ok(Self::NoDisp),
+            _ => Err(ParseTspError::InvalidInput {
+                key: K_DISP_TYPE.to_string(),
+                val: value.0.as_ref().to_string(),
+            }),
         }
     }
 }
