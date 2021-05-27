@@ -155,6 +155,24 @@ pub struct Tsp {
     edge_weights: Option<Vec<Vec<f64>>>,
 }
 
+// The macro concat_idents is still in nightly build.
+// This macro is still too verbose. Need rework.
+// https://doc.rust-lang.org/nightly/std/macro.concat_idents.html
+macro_rules! generate_iter_fn {
+    ($var:ident, $name_itr:ident, $t:ty, $(#[$outer:meta])*) => {
+        $(#[$outer])*
+        #[doc = ""]
+        #[doc = "If no data are available, an empty iterator will be returned instead."]
+        pub fn $name_itr(&self) -> std::slice::Iter<'_, $t> {
+            match &self.$var {
+                Some(v) => v.iter(),
+                // Returns an empty iter.
+                None => ([] as [$t; 0]).iter(),
+            }
+        }
+    };
+}
+
 impl Tsp {
     /// Returns the name of the dataset.
     pub fn name(&self) -> &String {
@@ -201,20 +219,48 @@ impl Tsp {
         self.node_coords.as_ref()
     }
 
+    generate_iter_fn!(
+        node_coords,
+        node_coords_itr,
+        Point,
+        #[doc = "Returns an iterator over node coordinates"]
+    );
+
     /// Returns the vector of fixed edges.
     pub fn fixed_edges(&self) -> Option<&Vec<(usize, usize)>> {
         self.fixed_edges.as_ref()
     }
+
+    generate_iter_fn!(
+        fixed_edges,
+        fixed_edges_itr,
+        (usize, usize),
+        #[doc = "Returns an iterator over fixed edges"]
+    );
 
     /// Returns the vector of node coordinates for display purpose.
     pub fn disp_coords(&self) -> Option<&Vec<Point>> {
         self.disp_coords.as_ref()
     }
 
+    generate_iter_fn!(
+        disp_coords,
+        disp_coords_itr,
+        Point,
+        #[doc = "Returns an iterator over display coordinates"]
+    );
+
     /// Returns the matrix of edge weights.
     pub fn edge_weights(&self) -> Option<&Vec<Vec<f64>>> {
         self.edge_weights.as_ref()
     }
+
+    generate_iter_fn!(
+        edge_weights,
+        edge_weights_itr,
+        Vec<f64>,
+        #[doc = "Returns an iterator over each row of edge weights"]
+    );
 }
 
 impl Display for Tsp {
@@ -596,26 +642,55 @@ impl TspBuilder {
 }
 
 /// Represents a node coordinate.
-///
-/// The enum has two variants. The first field in each variant is the id of a node in the dataset.
-/// The last two (or three) fields corresponds to a node coordinate in two (or three) dimensions.
 #[derive(Debug)]
-pub enum Point {
-    /// Two-dimensional coordinate.
-    TwoD (usize, f64, f64),
-    /// Three-dimensional coordinate.
-    ThreeD(usize, f64, f64, f64),
+pub struct Point {
+    /// Id of a point.
+    id: usize,
+    /// x coordinate.
+    x: f64,
+    /// y coordinate
+    y: f64,
+    /// z coordinate
+    z: f64,
+}
+
+// TODO: either use getset or macro for code generation.
+impl Point {
+    /// Constructs a new point.
+    pub fn new(id: usize, x: f64, y: f64, z: f64) -> Self {
+        Self { id, x, y, z }
+    }
+
+    /// Returns a point's id.
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    /// Returns a point's x coordinate.
+    pub fn x(&self) -> f64 {
+        self.x
+    }
+
+    /// Returns a point's y coordinate.
+    pub fn y(&self) -> f64 {
+        self.y
+    }
+
+    /// Returns a point's x coordinate.
+    pub fn z(&self) -> f64 {
+        self.z
+    }
 }
 
 impl From<(usize, f64, f64)> for Point {
     fn from(data: (usize, f64, f64)) -> Self {
-        Self::TwoD(data.0, data.1, data.2)
+        Self::new(data.0, data.1, data.2, 0.)
     }
 }
 
 impl From<(usize, f64, f64, f64)> for Point {
     fn from(data: (usize, f64, f64, f64)) -> Self {
-        Self::ThreeD(data.0, data.1, data.2, data.3)
+        Self::new(data.0, data.1, data.2, data.3)
     }
 }
 
