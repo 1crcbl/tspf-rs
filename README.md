@@ -13,12 +13,12 @@ The version ```0.2.0``` has the following new features:
 At the moment I'm focusing on implementing an LKH solver (also in Rust). Thus, many features of the parser are still missing, but will be gradually added.
 
 The library can currently parse the following problems from TSPLIB:  
-:ballot_box_with_check: TSP - symmetric travelling salesman problem  
-:ballot_box_with_check: HCP - Hamiltonian cycle problem  
-:black_square_button: ATSP - asymmetric travelling salesman problem  
-:black_square_button: SOP - sequential ordering problem  
-:black_square_button: CVRP - capacitated vehicle routing problem  
-:black_square_button: Tour - a collection of tours  
+- [X] TSP - symmetric travelling salesman problem  
+- [X] HCP - Hamiltonian cycle problem  
+- [ ] ATSP - asymmetric travelling salesman problem  
+- [ ] SOP - sequential ordering problem  
+- [ ] CVRP - capacitated vehicle routing problem  
+- [ ] Tour - a collection of tours  
 
 **NOTES**:
 - The files ```si175.tsp```, ```si535.tsp```, ```si1032.tsp``` from the TSP dataset require a small change: the type entry in the second line ```TYPE: TSP (M.~Hofmeister)``` is wrong according to the format definition. Instead, that line should simply be ```TYPE: TSP```.

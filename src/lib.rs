@@ -5,6 +5,8 @@
 mod error;
 pub use error::ParseTspError;
 
+pub mod metric;
+
 mod tsp;
 pub use tsp::CoordKind;
 pub use tsp::DisplayKind;

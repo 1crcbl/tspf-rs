@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use crate::error::ParseTspError;
+use crate::{error::ParseTspError, metric::MetricPoint};
 
 // (Some) keywords for data specification part.
 static K_NAME: &str = "NAME";
@@ -749,24 +749,18 @@ impl Point {
     pub fn new(id: usize, x: f64, y: f64, z: f64) -> Self {
         Self { id, x, y, z }
     }
+}
 
-    /// Returns a point's id.
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
-    /// Returns a point's x coordinate.
-    pub fn x(&self) -> f64 {
+impl MetricPoint for Point {
+    fn x(&self) -> f64 {
         self.x
     }
 
-    /// Returns a point's y coordinate.
-    pub fn y(&self) -> f64 {
+    fn y(&self) -> f64 {
         self.y
     }
 
-    /// Returns a point's x coordinate.
-    pub fn z(&self) -> f64 {
+    fn z(&self) -> f64 {
         self.z
     }
 }
