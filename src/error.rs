@@ -1,11 +1,17 @@
 use std::fmt::Display;
 
+/// An enum for errors that might occur during parsing.
 #[derive(Debug)]
 pub enum ParseTspError {
+    /// An error due to I/O operations.
     IoError(std::io::Error),
+    /// A required entry is missing.
     MissingEntry(String),
+    /// A line contains unrecognised keywords.
     InvalidEntry(String),
+    /// An entry contains invalid inputs.
     InvalidInput { key: String, val: String },
+    /// Any I/O or parsing errors that are not part of this list.
     Other(&'static str),
 }
 

@@ -20,9 +20,7 @@ impl WeightKind {
             Self::Max3d => max_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
             Self::Man2d => man_2d(a.x(), a.y(), b.x(), b.y()),
             Self::Man3d => man_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
-            Self::Ceil2d => {
-                todo!()
-            }
+            Self::Ceil2d => euc_2d(a.x(), a.y(), b.x(), b.y()).round(),
             Self::Att => att(a.x(), a.y(), b.x(), b.y()),
             Self::Xray1 => xray1(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
             Self::Xray2 => xray2(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),

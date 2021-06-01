@@ -1,10 +1,10 @@
 #![allow(unused_imports, dead_code)]
 use std::{ffi::OsStr, path::Path};
 
-use crate::metric::*;
+use crate::{metric::*, Tsp, WeightFormat};
 use crate::{TspBuilder, TspKind, WeightKind};
 
-const TEST_STR_1: &str = "
+const TEST_STR: &str = "
 NAME: test
 TYPE: TSP
 COMMENT: Test
@@ -20,7 +20,7 @@ EOF
 
 #[test]
 fn test_read_str() {
-    let result = TspBuilder::parse_str(TEST_STR_1);
+    let result = TspBuilder::parse_str(TEST_STR);
     assert!(result.is_ok());
     let tsp = result.unwrap();
 
@@ -32,7 +32,7 @@ fn test_read_str() {
 #[test]
 fn test_read_str_missing_name() {
     let mut s = String::from("");
-    for (idx, line) in TEST_STR_1.lines().enumerate() {
+    for (idx, line) in TEST_STR.lines().enumerate() {
         if idx == 1 {
             continue;
         }
@@ -47,7 +47,7 @@ fn test_read_str_missing_name() {
 #[test]
 fn test_read_str_missing_type() {
     let mut s = String::from("");
-    for (idx, line) in TEST_STR_1.lines().enumerate() {
+    for (idx, line) in TEST_STR.lines().enumerate() {
         if idx == 2 {
             continue;
         }
@@ -62,7 +62,7 @@ fn test_read_str_missing_type() {
 #[test]
 fn test_read_str_missing_dim() {
     let mut s = String::from("");
-    for (idx, line) in TEST_STR_1.lines().enumerate() {
+    for (idx, line) in TEST_STR.lines().enumerate() {
         if idx == 4 {
             continue;
         }
@@ -77,7 +77,7 @@ fn test_read_str_missing_dim() {
 #[test]
 fn test_read_str_missing_wtype() {
     let mut s = String::from("");
-    for (idx, line) in TEST_STR_1.lines().enumerate() {
+    for (idx, line) in TEST_STR.lines().enumerate() {
         if idx == 5 {
             continue;
         }
@@ -87,6 +87,96 @@ fn test_read_str_missing_wtype() {
 
     let result = TspBuilder::parse_str(s);
     assert!(result.is_err());
+}
+
+#[allow(unused_macros)]
+macro_rules! prep_weight {
+    ($x:expr, $w:expr) => {
+        format!(
+            "
+        NAME: test
+        TYPE: TSP
+        COMMENT: Test
+        DIMENSION: 5
+        EDGE_WEIGHT_TYPE: EXPLICIT
+        EDGE_WEIGHT_FORMAT: {}
+        EDGE_WEIGHT_SECTION
+        {}
+        ",
+            $x, $w
+        )
+    };
+}
+
+fn test_weight(tsp: Tsp) {
+    assert_eq!(5., tsp.weight(1, 2));
+    assert_eq!(10., tsp.weight(4, 3));
+    assert_eq!(10., tsp.weight(3, 4));
+    assert_eq!(9., tsp.weight(4, 2));
+    assert_eq!(9., tsp.weight(2, 4));
+    assert_eq!(0., tsp.weight(4, 4));
+}
+
+#[test]
+fn test_weight_upper() {
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::UpperRow.tsp_str(),
+        "1 2 3 4 5 6 7 8 9 10"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
+
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::UpperDiagRow.tsp_str(),
+        "0 1 2 3 4 0 5 6 7 0 8 9 0 10 0"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
+
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::UpperCol.tsp_str(),
+        "1 2 5 3 6 8 4 7 9 10"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
+
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::UpperDiagCol.tsp_str(),
+        "0 1 0 2 5 0 3 6 8 0 4 7 9 10 0"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
+}
+
+#[test]
+fn test_weight_lower() {
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::LowerRow.tsp_str(),
+        "1 2 5 3 6 8 4 7 9 10"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
+
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::LowerDiagRow.tsp_str(),
+        "0 1 0 2 5 0 3 6 8 0 4 7 9 10 0"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
+
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::LowerCol.tsp_str(),
+        "1 2 3 4 5 6 7 8 9 10"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
+
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::LowerDiagCol.tsp_str(),
+        "0 1 2 3 4 0 5 6 7 0 8 9 0 10 0"
+    ));
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    test_weight(result.unwrap());
 }
 
 #[test]

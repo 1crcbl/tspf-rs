@@ -60,7 +60,7 @@ static K_EDGE_WEIGHT_SEC: &str = "EDGE_WEIGHT_SECTION";
 /// entry is a tuple ```(usize, usize)```, in which the first number is a node's id and the second
 /// number represents the demand for that node. All depot nodes must be also included in this section
 /// and their demands are always ```0```.
-/// - ```EDGE_DATA_SECTION```: *not yet implemented*.
+/// - ```EDGE_DATA_SECTION```: a list of edges.
 /// - ```FIXED_EDGES_SECTION``` (optional): a list of edges that must be included in solutions to the problem.
 /// - ```DISPLAY_DATA_SECTION``` (required if ```DISPLAY_DATA_TYPE``` is [`DisplayKind::Disp2d`]):
 /// a list of 2D node coordinates for display purpose.
@@ -180,6 +180,62 @@ pub struct Tsp {
     /// Maps to the entry ```EDGE_WEIGHT_SECTION``` in the TSP format.
     #[getset(get = "pub")]
     edge_weights: Vec<Vec<f64>>,
+}
+
+impl Tsp {
+    /// Returns the edge weight between two nodes.
+    ///
+    /// # Arguments
+    /// * a - index of the first node.
+    /// * b - index of the second node.
+    pub fn weight(&self, a: usize, b: usize) -> f64 {
+        match self.weight_kind {
+            WeightKind::Explicit => match self.weight_format {
+                WeightFormat::Function => 0.,
+                WeightFormat::FullMatrix => self.edge_weights[a][b],
+                WeightFormat::UpperRow | WeightFormat::LowerCol => {
+                    if a == b {
+                        0.
+                    } else if a < b {
+                        self.edge_weights[a][b - a - 1]
+                    } else {
+                        self.edge_weights[b][a - b - 1]
+                    }
+                }
+                WeightFormat::UpperDiagRow | WeightFormat::LowerDiagCol => {
+                    if a < b {
+                        self.edge_weights[a][b - a]
+                    } else {
+                        self.edge_weights[b][a - b]
+                    }
+                }
+                WeightFormat::LowerRow | WeightFormat::UpperCol => {
+                    if a == b {
+                        0.
+                    } else if a < b {
+                        self.edge_weights[b - 1][a]
+                    } else {
+                        self.edge_weights[a - 1][b]
+                    }
+                }
+                WeightFormat::LowerDiagRow | WeightFormat::UpperDiagCol => {
+                    if a < b {
+                        self.edge_weights[b][a]
+                    } else {
+                        self.edge_weights[a][b]
+                    }
+                }
+                WeightFormat::Undefined => 0.,
+            },
+            _ => {
+                if let (Some(na), Some(nb)) = (self.node_coords.get(a), self.node_coords.get(b)) {
+                    self.weight_kind.cost(na, nb)
+                } else {
+                    0.
+                }
+            }
+        }
+    }
 }
 
 impl Display for Tsp {
@@ -509,6 +565,7 @@ impl TspBuilder {
         Ok(())
     }
 
+    /// Parses ```EDGE_WEIGHT_SECTION```.
     fn parse_edge_weight_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
     where
         I: Iterator,
@@ -944,6 +1001,26 @@ pub enum WeightFormat {
     LowerDiagCol,
     /// No specification how weights are stored.
     Undefined,
+}
+
+impl WeightFormat {
+    /// Returns the string value in TSPLIB format.
+    #[allow(dead_code)]
+    pub(crate) fn tsp_str(&self) -> &'static str {
+        match self {
+            WeightFormat::Function => "FUNCTION",
+            WeightFormat::FullMatrix => "FULL_MATRIX",
+            WeightFormat::UpperRow => "UPPER_ROW",
+            WeightFormat::LowerRow => "LOWER_ROW",
+            WeightFormat::UpperDiagRow => "UPPER_DIAG_ROW",
+            WeightFormat::LowerDiagRow => "LOWER_DIAG_ROW",
+            WeightFormat::UpperCol => "UPPER_COL",
+            WeightFormat::LowerCol => "LOWER_COL",
+            WeightFormat::UpperDiagCol => "UPPER_DIAG_COL",
+            WeightFormat::LowerDiagCol => "LOWER_DIAG_COL",
+            WeightFormat::Undefined => "UNDEFINED",
+        }
+    }
 }
 
 impl From<&str> for WeightFormat {
