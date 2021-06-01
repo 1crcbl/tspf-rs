@@ -180,6 +180,47 @@ fn test_weight_lower() {
 }
 
 #[test]
+fn test_tour() {
+    let s1 = "
+    NAME : test
+    COMMENT : test
+    TYPE : TOUR
+    DIMENSION : 4
+    TOUR_SECTION
+    4 3 2 1
+    -1
+    EOF
+    ";
+
+    let result = TspBuilder::parse_str(s1);
+    assert!(result.is_ok());
+    let tsp = result.unwrap();
+    assert_eq!(1, tsp.tours().len());
+
+    let s2 = "
+    NAME : test
+    COMMENT : test
+    TYPE : TOUR
+    DIMENSION : 4
+    TOUR_SECTION
+    1
+    2
+    3
+    4
+    -1
+    4 3 2 1
+    -1
+    -1
+    EOF
+    ";
+
+    let result = TspBuilder::parse_str(s2);
+    assert!(result.is_ok());
+    let tsp = result.unwrap();
+    assert_eq!(2, tsp.tours().len());
+}
+
+#[test]
 fn test_metric_fn() {
     assert_eq!(5., euc_2d(6., 0., 3., 4.), "Test euc_2d");
     assert_eq!(

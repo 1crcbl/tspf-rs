@@ -16,9 +16,9 @@ The library can currently parse the following problems from TSPLIB:
 - [X] TSP - symmetric travelling salesman problem  
 - [X] HCP - Hamiltonian cycle problem  
 - [X] ATSP - asymmetric travelling salesman problem  
-- [ ] SOP - sequential ordering problem  
+- [X] SOP - sequential ordering problem  
 - [X] CVRP - capacitated vehicle routing problem  
-- [ ] Tour - a collection of tours  
+- [X] Tour - a collection of tours  
 
 **NOTES**:
 - The files ```si175.tsp```, ```si535.tsp```, ```si1032.tsp``` from the TSP dataset require a small change: the type entry in the second line ```TYPE: TSP (M.~Hofmeister)``` is wrong according to the format definition. Instead, that line should simply be ```TYPE: TSP```.

@@ -24,6 +24,7 @@ static K_DISP_TYPE: &str = "DISPLAY_DATA_TYPE";
 // (Some) keywords for the data part.
 static K_NODE_COORD_SEC: &str = "NODE_COORD_SECTION";
 static K_EDGE_WEIGHT_SEC: &str = "EDGE_WEIGHT_SECTION";
+static K_TOUR_SEC: &str = "TOUR_SECTION";
 
 /// Represents a parsed TSP dataset.
 ///
@@ -64,7 +65,7 @@ static K_EDGE_WEIGHT_SEC: &str = "EDGE_WEIGHT_SECTION";
 /// - ```FIXED_EDGES_SECTION``` (optional): a list of edges that must be included in solutions to the problem.
 /// - ```DISPLAY_DATA_SECTION``` (required if ```DISPLAY_DATA_TYPE``` is [`DisplayKind::Disp2d`]):
 /// a list of 2D node coordinates for display purpose.
-/// - ```TOUR_SECTION```: *not yet implemented*.
+/// - ```TOUR_SECTION```: a collection of tours. Each tour is a sequence of node ids.
 /// - ```EDGE_WEIGHT_SECTION```(optional if ```EDGE_WEIGHT_FORMAT``` is [`WeightFormat::Function`]):
 ///  node coordinates in a matrix form as dictated in ```EDGE_WEIGHT_FORMAT```.
 ///
@@ -180,6 +181,11 @@ pub struct Tsp {
     /// Maps to the entry ```EDGE_WEIGHT_SECTION``` in the TSP format.
     #[getset(get = "pub")]
     edge_weights: Vec<Vec<f64>>,
+    /// A collection of tours (a sequence of nodes).
+    ///
+    /// Maps to the entry ```TOUR_SECTION``` in the TSP format.
+    #[getset(get = "pub")]
+    tours: Vec<Vec<usize>>,
 }
 
 impl Tsp {
@@ -281,6 +287,7 @@ pub struct TspBuilder {
     edge_weights: Option<Vec<Vec<f64>>>,
     disp_coords: Option<Vec<Point>>,
     fixed_edges: Option<Vec<(usize, usize)>>,
+    tours: Option<Vec<Vec<usize>>>,
 }
 
 impl TspBuilder {
@@ -388,8 +395,8 @@ impl TspBuilder {
                 builder.parse_fixed_edges_section(itr)?;
             } else if line.starts_with("DISPLAY_DATA_SECTION") {
                 builder.parse_display_data_section(itr)?;
-            } else if line.starts_with("TOUR_SECTION") {
-                todo!()
+            } else if line.starts_with(K_TOUR_SEC) {
+                builder.parse_tour_section(itr)?;
             } else if line.starts_with(K_EDGE_WEIGHT_SEC) {
                 builder.parse_edge_weight_section(itr)?;
             } else {
@@ -565,6 +572,62 @@ impl TspBuilder {
         Ok(())
     }
 
+    /// Parses ```TOUR_SECTION```.
+    fn parse_tour_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
+    where
+        I: Iterator,
+        <I as Iterator>::Item: AsRef<str>,
+    {
+        self.validate_spec()?;
+        let mut dta = Vec::new();
+        let mut v = Vec::new();
+
+        // Naive implementation.
+        loop {
+            let line = lines_it.next().unwrap();
+            let s = line.as_ref().trim();
+
+            if s.starts_with("-1") {
+                let tmp = v.drain(0..).collect();
+                dta.push(tmp);
+
+                match lines_it.peekable().peek() {
+                    Some(peek) => {
+                        let s = peek.as_ref().trim();
+                        if s.starts_with("-1") {
+                            break;
+                        }
+                        let ch = s.chars().next().unwrap();
+                        if ch.is_digit(10) {
+                            v = Vec::new();
+                            v.append(
+                                &mut s
+                                    .split_whitespace()
+                                    .map(|s| s.parse::<usize>().unwrap())
+                                    .collect(),
+                            );
+                        } else {
+                            break;
+                        }
+                    }
+                    None => break,
+                };
+                continue;
+            }
+
+            v.append(
+                &mut s
+                    .split_whitespace()
+                    .map(|s| s.parse::<usize>().unwrap())
+                    .collect(),
+            );
+        }
+
+        self.tours = Some(dta);
+
+        Ok(())
+    }
+
     /// Parses ```EDGE_WEIGHT_SECTION```.
     fn parse_edge_weight_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
     where
@@ -609,6 +672,12 @@ impl TspBuilder {
                 .collect();
 
             v.append(&mut tmp);
+        }
+
+        // The SOP files from TSPLIB has an extra line containing dimension in this section,
+        // which does not follow the specification.
+        if v.len() == dim + 1 {
+            v.remove(0);
         }
 
         while let Some(len_row) = it.next() {
@@ -658,42 +727,43 @@ impl TspBuilder {
         }
 
         match self.kind {
-            Some(kind) => match kind {
-                TspKind::Tsp | TspKind::Atsp | TspKind::Cvrp => {
-                    match self.weight_kind {
-                        Some(wk) => match wk {
-                            WeightKind::Undefined => {
-                                Err(ParseTspError::InvalidEntry(String::from(K_WEIGHT_TYPE)))?
+            Some(kind) => {
+                match kind {
+                    TspKind::Tsp | TspKind::Atsp | TspKind::Cvrp | TspKind::Sop => {
+                        match self.weight_kind {
+                            Some(wk) => match wk {
+                                WeightKind::Undefined => {
+                                    Err(ParseTspError::InvalidEntry(String::from(K_WEIGHT_TYPE)))?
+                                }
+                                _ => {}
+                            },
+                            None => Err(ParseTspError::MissingEntry(String::from(K_WEIGHT_TYPE)))?,
+                        }
+
+                        if kind == TspKind::Cvrp {
+                            if self.capacity.is_none() {
+                                return Err(ParseTspError::MissingEntry(String::from(K_CAP)));
+                            }
+                        }
+                    }
+                    TspKind::Hcp => match self.edge_format {
+                        Some(ref ef) => match ef {
+                            EdgeFormat::Undefined => {
+                                Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))?
                             }
                             _ => {}
                         },
-                        None => Err(ParseTspError::MissingEntry(String::from(K_WEIGHT_TYPE)))?,
-                    }
-
-                    if kind == TspKind::Cvrp {
-                        if self.capacity.is_none() {
-                            return Err(ParseTspError::MissingEntry(String::from(K_CAP)));
-                        }
-                    }
-                }
-                TspKind::Sop => todo!("Parser for SOP has not been implemented yet."),
-                TspKind::Hcp => match self.edge_format {
-                    Some(ref ef) => match ef {
-                        EdgeFormat::Undefined => {
-                            Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))?
-                        }
-                        _ => {}
+                        None => Err(ParseTspError::MissingEntry(String::from(K_EDGE_FORMAT)))?,
                     },
-                    None => Err(ParseTspError::MissingEntry(String::from(K_EDGE_FORMAT)))?,
-                },
-                TspKind::Tour => todo!("Parser for TOUR has not been implemented yet."),
-                TspKind::Undefined => Err(ParseTspError::InvalidEntry(String::from(K_TYPE)))?,
-            },
-            None => Err(ParseTspError::MissingEntry(String::from(K_TYPE)))?,
-        }
+                    TspKind::Tour => {}
+                    TspKind::Undefined => Err(ParseTspError::InvalidEntry(String::from(K_TYPE)))?,
+                }
 
-        if self.dim.is_none() {
-            return Err(ParseTspError::MissingEntry(String::from(K_DIM)));
+                if kind != TspKind::Tour && self.dim.is_none() {
+                    return Err(ParseTspError::MissingEntry(String::from(K_DIM)));
+                }
+            }
+            None => Err(ParseTspError::MissingEntry(String::from(K_TYPE)))?,
         }
 
         Ok(())
@@ -716,7 +786,11 @@ impl TspBuilder {
             },
             TspKind::Sop => {}
             TspKind::Hcp => {}
-            TspKind::Tour => {}
+            TspKind::Tour => {
+                if self.tours.is_none() {
+                    Err(ParseTspError::MissingEntry(String::from(K_TOUR_SEC)))?
+                }
+            }
             TspKind::Undefined => {}
         }
 
@@ -748,25 +822,26 @@ impl TspBuilder {
             name: self.name.unwrap(),
             kind: self.kind.unwrap(),
             comment: self.comment.unwrap_or(String::new()),
-            dim: self.dim.unwrap(),
+            dim: self.dim.unwrap_or(0),
             capacity: self.capacity.unwrap_or(0),
             weight_kind: self.weight_kind.unwrap_or(WeightKind::Undefined),
             weight_format: self.weight_format.unwrap_or(WeightFormat::Undefined),
             edge_format: self.edge_format.unwrap_or(EdgeFormat::Undefined),
             coord_kind: self.coord_kind.unwrap_or(CoordKind::Undefined),
             disp_kind: self.disp_kind.unwrap_or(DisplayKind::Undefined),
-            node_coords: self.coords.unwrap_or(Vec::new()),
-            demands: self.demands.unwrap_or(Vec::new()),
-            depots: self.depots.unwrap_or(Vec::new()),
-            edge_weights: self.edge_weights.unwrap_or(Vec::new()),
-            disp_coords: self.disp_coords.unwrap_or(Vec::new()),
-            fixed_edges: self.fixed_edges.unwrap_or(Vec::new()),
+            node_coords: self.coords.unwrap_or(Vec::with_capacity(0)),
+            demands: self.demands.unwrap_or(Vec::with_capacity(0)),
+            depots: self.depots.unwrap_or(Vec::with_capacity(0)),
+            edge_weights: self.edge_weights.unwrap_or(Vec::with_capacity(0)),
+            disp_coords: self.disp_coords.unwrap_or(Vec::with_capacity(0)),
+            fixed_edges: self.fixed_edges.unwrap_or(Vec::with_capacity(0)),
+            tours: self.tours.unwrap_or(Vec::with_capacity(0)),
         })
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct InputWrapper<T>(T);
+struct InputWrapper<T>(T);
 
 /// Represents a node coordinate.
 #[derive(Clone, Copy, Debug)]
