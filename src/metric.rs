@@ -1,55 +1,31 @@
 use std::f64::consts::PI;
 
+use crate::WeightKind;
+
 const EARTH_RADIUS: f64 = 6378.388;
 
-/// An enum for distance functions defined in the ```TSPLIB``` format.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum MetricKind {
-    /// Two-dimensional Euclidean distance.
-    Euc2d,
-    /// Three-dimensional Euclidean distance.
-    Euc3d,
-    /// Two-dimensional maximum distance.
-    Max2d,
-    /// Three-dimensional maximum distance.
-    Max3d,
-    /// Two-dimensional Manhattan distance.
-    Man2d,
-    /// Three-dimensional Manhattan distance.
-    Man3d,
-    /// Geographical distance.
-    Geo,
-    /// Special distance function for problems ```att48``` and ```att532```.
-    Att,
-    /// Special distance function for crystallography problems of version 1.
-    Xray1,
-    /// Special distance function for crystallography problems of version 2.
-    Xray2,
-    /// Distance function defined by users.
-    Custom,
-    /// No distance function is given.
-    Undefined,
-}
-
-impl MetricKind {
+impl WeightKind {
     /// Calculates and returns the cost (or distance) between two points.
     ///
-    /// For [`MetricKind::Custom`] and [`MetricKind::Undefined`], the function will always return ```0.```.
+    /// For [`WeightKind::Custom`] and [`WeightKind::Undefined`], the function will always return ```0.```.
     pub fn cost<T>(&self, a: &T, b: &T) -> f64
     where
         T: MetricPoint,
     {
         match self {
-            MetricKind::Euc2d => euc_2d(a.x(), a.y(), b.x(), b.y()),
-            MetricKind::Euc3d => euc_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
-            MetricKind::Geo => geo(a.x(), a.y(), b.x(), b.y()),
-            MetricKind::Max2d => max_2d(a.x(), a.y(), b.x(), b.y()),
-            MetricKind::Max3d => max_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
-            MetricKind::Man2d => man_2d(a.x(), a.y(), b.x(), b.y()),
-            MetricKind::Man3d => man_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
-            MetricKind::Att => att(a.x(), a.y(), b.x(), b.y()),
-            MetricKind::Xray1 => xray1(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
-            MetricKind::Xray2 => xray2(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
+            Self::Euc2d => euc_2d(a.x(), a.y(), b.x(), b.y()),
+            Self::Euc3d => euc_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
+            Self::Geo => geo(a.x(), a.y(), b.x(), b.y()),
+            Self::Max2d => max_2d(a.x(), a.y(), b.x(), b.y()),
+            Self::Max3d => max_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
+            Self::Man2d => man_2d(a.x(), a.y(), b.x(), b.y()),
+            Self::Man3d => man_3d(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
+            Self::Ceil2d => {
+                todo!()
+            }
+            Self::Att => att(a.x(), a.y(), b.x(), b.y()),
+            Self::Xray1 => xray1(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
+            Self::Xray2 => xray2(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()),
             _ => 0.,
         }
     }

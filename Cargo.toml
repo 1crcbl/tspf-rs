@@ -14,3 +14,4 @@ keywords = ["tsp", "parser"]
 categories = ["parser-implementations"]
 
 [dependencies]
+getset = "0.1.1"

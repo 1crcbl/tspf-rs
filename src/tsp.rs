@@ -6,12 +6,15 @@ use std::{
     path::Path,
 };
 
+use getset::{CopyGetters, Getters};
+
 use crate::{error::ParseTspError, metric::MetricPoint};
 
 // (Some) keywords for data specification part.
 static K_NAME: &str = "NAME";
 static K_TYPE: &str = "TYPE";
 static K_DIM: &str = "DIMENSION";
+static K_CAP: &str = "CAPACITY";
 static K_WEIGHT_TYPE: &str = "EDGE_WEIGHT_TYPE";
 static K_WEIGHT_FORMAT: &str = "EDGE_WEIGHT_FORMAT";
 static K_EDGE_FORMAT: &str = "EDGE_DATA_FORMAT";
@@ -21,17 +24,6 @@ static K_DISP_TYPE: &str = "DISPLAY_DATA_TYPE";
 // (Some) keywords for the data part.
 static K_NODE_COORD_SEC: &str = "NODE_COORD_SECTION";
 static K_EDGE_WEIGHT_SEC: &str = "EDGE_WEIGHT_SECTION";
-
-/// Macro for implementing trait Display for Enums.
-macro_rules! impl_disp_enum {
-    ($enm:ident) => {
-        impl std::fmt::Display for $enm {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{:?}", self)
-            }
-        }
-    };
-}
 
 /// Represents a parsed TSP dataset.
 ///
@@ -63,8 +55,11 @@ macro_rules! impl_disp_enum {
 /// The *data part* has the following entries:
 /// - ```NODE_COORD_SECTION``` (required if ```NODE_COORD_TYPE``` is not [`CoordKind::NoCoord`]):
 /// a list of node coordinates.
-/// - ```DEPOT_SECTION```: *not yet implemented*.
-/// - ```DEMAND_SECTION```: *not yet implemented*.
+/// - ```DEPOT_SECTION``` (relevant for [`TspKind::Cvrp`]): a list of possible alternate nodes.
+/// - ```DEMAND_SECTION``` (relevant for [`TspKind::Cvrp`]): a list of demands for all nodes. Each
+/// entry is a tuple ```(usize, usize)```, in which the first number is a node's id and the second
+/// number represents the demand for that node. All depot nodes must be also included in this section
+/// and their demands are always ```0```.
 /// - ```EDGE_DATA_SECTION```: *not yet implemented*.
 /// - ```FIXED_EDGES_SECTION``` (optional): a list of edges that must be included in solutions to the problem.
 /// - ```DISPLAY_DATA_SECTION``` (required if ```DISPLAY_DATA_TYPE``` is [`DisplayKind::Disp2d`]):
@@ -103,168 +98,88 @@ macro_rules! impl_disp_enum {
 /// let result = TspBuilder::parse_path(path);
 /// assert!(result.is_ok());
 /// ```
-#[derive(Debug)]
+#[derive(Debug, CopyGetters, Getters)]
 pub struct Tsp {
     /// Name of the dataset.
     ///
     /// Maps to the entry ```NAME``` in the TSP format.
+    #[getset(get = "pub")]
     name: String,
     /// Type specifier of the dataset.
     ///
     /// Maps to the entry ```TYPE``` in the TSP format.
+    #[getset(get_copy = "pub")]
     kind: TspKind,
     /// Additional comments.
     ///
     /// Maps to the entry ```COMMENT``` in the TSP format.
-    comment: Option<String>,
+    #[getset(get = "pub")]
+    comment: String,
     /// The dimension of a dataset.
     ///
     /// Maps to the entry ```DIMENSION``` in the TSP format.
+    #[getset(get_copy = "pub")]
     dim: usize,
+    /// The truck capacity for CVRP.
+    ///
+    /// Maps to the entry ```CAPACITY``` in the TSP format.
+    #[getset(get_copy = "pub")]
+    capacity: usize,
     /// Specifier for how the edge weights are calculated.
     ///
     /// Maps to the entry ```EDGE_WEIGHT_TYPE``` in the TSP format.
+    #[getset(get_copy = "pub")]
     weight_kind: WeightKind,
     /// Specifier for how the edge weights are stored in a file.
     ///
     /// Maps to the entry ```EDGE_WEIGHT_FORMAT``` in the TSP format.
+    #[getset(get_copy = "pub")]
     weight_format: WeightFormat,
     /// Specifier for how the edges are stored in a file.
     ///
     /// Maps to the entry ```EDGE_DATA_FORMAT``` in the TSP format.
+    #[getset(get = "pub")]
     edge_format: EdgeFormat,
     /// Specifier for how the node coordinates are stored in a file.
     ///
     /// Maps to the entry ```NODE_COORD_TYPE``` in the TSP format.
+    #[getset(get_copy = "pub")]
     coord_kind: CoordKind,
     /// Specifier for how node coordinates for display purpose are stored in a file.
     ///
     /// Maps to the entry ```DISPLAY_DATA_TYPE``` in the TSP format.
+    #[getset(get_copy = "pub")]
     disp_kind: DisplayKind,
     /// Vector of node coordinates, if available.
     ///
     /// Maps to the entry ```NODE_COORD_SECTION``` in the TSP format.
-    node_coords: Option<Vec<Point>>,
+    #[getset(get = "pub")]
+    node_coords: Vec<Point>,
+    /// Vector of depot nodes' id, if available.
+    ///
+    /// Maps to the entry ```DEPOT_SECTION``` in the TSP format.
+    #[getset(get = "pub")]
+    depots: Vec<usize>,
+    /// Vector of node demands, if available.
+    ///
+    /// Maps to the entry ```DEMAND_SECTION``` in the TSP format.
+    #[getset(get = "pub")]
+    demands: Vec<(usize, usize)>,
     /// Vector of edges that *must* appear in solutions to the problem.
     ///
     /// Maps to the entry ```FIXED_EDGES_SECTION``` in the TSP format.
-    fixed_edges: Option<Vec<(usize, usize)>>,
+    #[getset(get = "pub")]
+    fixed_edges: Vec<(usize, usize)>,
     /// A vector of 2D node coordinates for display purpose, if available.
     ///
     /// Maps to the entry ```DISPLAY_DATA_SECTION``` in the TSP format.
-    disp_coords: Option<Vec<Point>>,
+    #[getset(get = "pub")]
+    disp_coords: Vec<Point>,
     /// Edge weights in a matrix form as stated in ```EDGE_WEIGHT_FORMAT```, if available.
     ///
     /// Maps to the entry ```EDGE_WEIGHT_SECTION``` in the TSP format.
-    edge_weights: Option<Vec<Vec<f64>>>,
-}
-
-// The macro concat_idents is still in nightly build.
-// This macro is still too verbose. Need rework.
-// https://doc.rust-lang.org/nightly/std/macro.concat_idents.html
-macro_rules! generate_iter_fn {
-    ($var:ident, $name_itr:ident, $t:ty, $(#[$outer:meta])*) => {
-        $(#[$outer])*
-        #[doc = ""]
-        #[doc = "If no data are available, an empty iterator will be returned instead."]
-        pub fn $name_itr(&self) -> std::slice::Iter<'_, $t> {
-            match &self.$var {
-                Some(v) => v.iter(),
-                // Returns an empty iter.
-                None => ([] as [$t; 0]).iter(),
-            }
-        }
-    };
-}
-
-impl Tsp {
-    /// Returns the name of the dataset.
-    pub fn name(&self) -> &String {
-        &self.name
-    }
-
-    /// Returns the problem variant of the dataset.
-    pub fn kind(&self) -> TspKind {
-        self.kind
-    }
-
-    /// Returns comments of the dataset.
-    pub fn comment(&self) -> Option<&String> {
-        self.comment.as_ref()
-    }
-
-    /// Returns the dimension of the dataset.
-    pub fn dim(&self) -> usize {
-        self.dim
-    }
-
-    /// Return the enum indicating how the edge weights calculated or given.
-    pub fn weight_kind(&self) -> WeightKind {
-        self.weight_kind
-    }
-
-    /// Returns the enum indicating how the edge weights are stored in a file.
-    pub fn weight_format(&self) -> WeightFormat {
-        self.weight_format
-    }
-
-    /// Returns the enum indicating how node coordinates are stored in a file.
-    pub fn coord_kind(&self) -> CoordKind {
-        self.coord_kind
-    }
-
-    /// Returns the enum indicating how node coordinates for display purpose are stored in a file.
-    pub fn disp_kind(&self) -> DisplayKind {
-        self.disp_kind
-    }
-
-    /// Returns the vector of node coordinates.
-    pub fn node_coords(&self) -> Option<&Vec<Point>> {
-        self.node_coords.as_ref()
-    }
-
-    generate_iter_fn!(
-        node_coords,
-        node_coords_itr,
-        Point,
-        #[doc = "Returns an iterator over node coordinates"]
-    );
-
-    /// Returns the vector of fixed edges.
-    pub fn fixed_edges(&self) -> Option<&Vec<(usize, usize)>> {
-        self.fixed_edges.as_ref()
-    }
-
-    generate_iter_fn!(
-        fixed_edges,
-        fixed_edges_itr,
-        (usize, usize),
-        #[doc = "Returns an iterator over fixed edges"]
-    );
-
-    /// Returns the vector of node coordinates for display purpose.
-    pub fn disp_coords(&self) -> Option<&Vec<Point>> {
-        self.disp_coords.as_ref()
-    }
-
-    generate_iter_fn!(
-        disp_coords,
-        disp_coords_itr,
-        Point,
-        #[doc = "Returns an iterator over display coordinates"]
-    );
-
-    /// Returns the matrix of edge weights.
-    pub fn edge_weights(&self) -> Option<&Vec<Vec<f64>>> {
-        self.edge_weights.as_ref()
-    }
-
-    generate_iter_fn!(
-        edge_weights,
-        edge_weights_itr,
-        Vec<f64>,
-        #[doc = "Returns an iterator over each row of edge weights"]
-    );
+    #[getset(get = "pub")]
+    edge_weights: Vec<Vec<f64>>,
 }
 
 impl Display for Tsp {
@@ -297,6 +212,7 @@ pub struct TspBuilder {
     kind: Option<TspKind>,
     comment: Option<String>,
     dim: Option<usize>,
+    capacity: Option<usize>,
     weight_kind: Option<WeightKind>,
     weight_format: Option<WeightFormat>,
     edge_format: Option<EdgeFormat>,
@@ -304,6 +220,8 @@ pub struct TspBuilder {
     disp_kind: Option<DisplayKind>,
     // Data
     coords: Option<Vec<Point>>,
+    depots: Option<Vec<usize>>,
+    demands: Option<Vec<(usize, usize)>>,
     edge_weights: Option<Vec<Vec<f64>>>,
     disp_coords: Option<Vec<Point>>,
     fixed_edges: Option<Vec<(usize, usize)>>,
@@ -340,12 +258,17 @@ impl TspBuilder {
     where
         P: AsRef<Path>,
     {
+        if path.as_ref().is_dir() {
+            return Err(ParseTspError::Other("Path is a directory"));
+        }
+
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         let mut lines_it = reader.lines().map(|l| l.unwrap());
         Self::parse_it(&mut lines_it)
     }
 
+    /// Parses each line iterator.
     fn parse_it<I>(itr: &mut I) -> Result<Tsp, ParseTspError>
     where
         I: Iterator,
@@ -377,7 +300,7 @@ impl TspBuilder {
             } else if line.starts_with(K_DIM) {
                 builder.dim = Some(splitter(&line).parse::<usize>().unwrap());
             } else if line.starts_with("CAPACITY") {
-                todo!()
+                builder.capacity = Some(splitter(&line).parse::<usize>().unwrap());
             } else if line.starts_with(K_WEIGHT_TYPE) {
                 let kind = WeightKind::try_from(InputWrapper(splitter(&line).as_str()))?;
                 builder.weight_kind = Some(kind.clone());
@@ -400,9 +323,9 @@ impl TspBuilder {
             } else if line.starts_with(K_NODE_COORD_SEC) {
                 builder.parse_node_coord_section(itr)?;
             } else if line.starts_with("DEPOT_SECTION") {
-                todo!()
+                builder.parse_depot_section(itr)?;
             } else if line.starts_with("DEMAND_SECTION") {
-                todo!()
+                builder.parse_demand_section(itr)?;
             } else if line.starts_with("EDGE_DATA_SECTION") {
                 builder.parse_edge_data_section(itr)?;
             } else if line.starts_with("FIXED_EDGES_SECTION") {
@@ -484,6 +407,53 @@ impl TspBuilder {
         Ok(())
     }
 
+    /// Parse the block `DEPOT_SECTION`.
+    fn parse_depot_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
+    where
+        I: Iterator,
+        <I as Iterator>::Item: AsRef<str>,
+    {
+        self.validate_spec()?;
+
+        let mut dta = Vec::new();
+
+        loop {
+            let line = lines_it.next().unwrap();
+            if line.as_ref().trim().starts_with("-1") {
+                break;
+            }
+
+            dta.push(line.as_ref().trim().parse::<usize>().unwrap());
+        }
+
+        self.depots = Some(dta);
+
+        Ok(())
+    }
+
+    /// Parse the block `DEMAND_SECTION`.
+    fn parse_demand_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
+    where
+        I: Iterator,
+        <I as Iterator>::Item: AsRef<str>,
+    {
+        self.validate_spec()?;
+
+        let mut dta = Vec::new();
+
+        for _ in 0..self.dim.unwrap() {
+            let line = lines_it.next().unwrap();
+            let mut it = line.as_ref().trim().split_whitespace();
+            if let (Some(id), Some(de)) = (it.next(), it.next()) {
+                dta.push((id.parse::<usize>().unwrap(), de.parse::<usize>().unwrap()));
+            }
+        }
+
+        self.demands = Some(dta);
+
+        Ok(())
+    }
+
     /// Parses the ```EDGE_DATA_SECTION```.
     fn parse_edge_data_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
     where
@@ -554,14 +524,18 @@ impl TspBuilder {
                 WeightFormat::FullMatrix => {
                     (dim, dim * dim, Box::new(std::iter::repeat(dim).take(dim)))
                 }
-                WeightFormat::UpperRow => (dim - 1, dim * (dim - 1) / 2, Box::new((1..dim).rev())),
-                WeightFormat::LowerRow => (dim - 1, dim * (dim - 1) / 2, Box::new(1..dim)),
-                WeightFormat::UpperRowDiag => (dim, dim * (dim + 1) / 2, Box::new((1..=dim).rev())),
-                WeightFormat::LowerRowDiag => (dim, dim * (dim + 1) / 2, Box::new(1..=dim)),
-                WeightFormat::UpperCol => todo!(),
-                WeightFormat::LowerCol => todo!(),
-                WeightFormat::UpperColDiag => todo!(),
-                WeightFormat::LowerColDiag => todo!(),
+                WeightFormat::UpperRow | WeightFormat::LowerCol => {
+                    (dim - 1, dim * (dim - 1) / 2, Box::new((1..dim).rev()))
+                }
+                WeightFormat::LowerRow | WeightFormat::UpperCol => {
+                    (dim - 1, dim * (dim - 1) / 2, Box::new(1..dim))
+                }
+                WeightFormat::UpperDiagRow | WeightFormat::LowerDiagCol => {
+                    (dim, dim * (dim + 1) / 2, Box::new((1..=dim).rev()))
+                }
+                WeightFormat::LowerDiagRow | WeightFormat::UpperDiagCol => {
+                    (dim, dim * (dim + 1) / 2, Box::new(1..=dim))
+                }
                 WeightFormat::Undefined => (0, 0, Box::new(std::iter::empty::<usize>())),
             };
 
@@ -628,16 +602,23 @@ impl TspBuilder {
 
         match self.kind {
             Some(kind) => match kind {
-                TspKind::Tsp => match self.weight_kind {
-                    Some(wk) => match wk {
-                        WeightKind::Undefined => {
-                            Err(ParseTspError::InvalidEntry(String::from(K_WEIGHT_TYPE)))?
+                TspKind::Tsp | TspKind::Atsp | TspKind::Cvrp => {
+                    match self.weight_kind {
+                        Some(wk) => match wk {
+                            WeightKind::Undefined => {
+                                Err(ParseTspError::InvalidEntry(String::from(K_WEIGHT_TYPE)))?
+                            }
+                            _ => {}
+                        },
+                        None => Err(ParseTspError::MissingEntry(String::from(K_WEIGHT_TYPE)))?,
+                    }
+
+                    if kind == TspKind::Cvrp {
+                        if self.capacity.is_none() {
+                            return Err(ParseTspError::MissingEntry(String::from(K_CAP)));
                         }
-                        _ => {}
-                    },
-                    None => Err(ParseTspError::MissingEntry(String::from(K_WEIGHT_TYPE)))?,
-                },
-                TspKind::Atsp => todo!("Parser for ATSP has not been implemented yet."),
+                    }
+                }
                 TspKind::Sop => todo!("Parser for SOP has not been implemented yet."),
                 TspKind::Hcp => match self.edge_format {
                     Some(ref ef) => match ef {
@@ -648,7 +629,6 @@ impl TspBuilder {
                     },
                     None => Err(ParseTspError::MissingEntry(String::from(K_EDGE_FORMAT)))?,
                 },
-                TspKind::Cvrp => todo!("Parser for CVRP has not been implemented yet."),
                 TspKind::Tour => todo!("Parser for TOUR has not been implemented yet."),
                 TspKind::Undefined => Err(ParseTspError::InvalidEntry(String::from(K_TYPE)))?,
             },
@@ -665,7 +645,7 @@ impl TspBuilder {
     /// Validates the data part.
     fn validate_data(&self) -> Result<(), ParseTspError> {
         match self.kind.unwrap() {
-            TspKind::Tsp => match self.weight_kind.unwrap() {
+            TspKind::Tsp | TspKind::Atsp | TspKind::Cvrp => match self.weight_kind.unwrap() {
                 WeightKind::Explicit => {
                     if self.edge_weights.is_none() {
                         Err(ParseTspError::MissingEntry(String::from(K_EDGE_WEIGHT_SEC)))?
@@ -677,10 +657,8 @@ impl TspBuilder {
                     }
                 }
             },
-            TspKind::Atsp => {}
             TspKind::Sop => {}
             TspKind::Hcp => {}
-            TspKind::Cvrp => {}
             TspKind::Tour => {}
             TspKind::Undefined => {}
         }
@@ -712,17 +690,20 @@ impl TspBuilder {
         Ok(Tsp {
             name: self.name.unwrap(),
             kind: self.kind.unwrap(),
-            comment: self.comment,
+            comment: self.comment.unwrap_or(String::new()),
             dim: self.dim.unwrap(),
+            capacity: self.capacity.unwrap_or(0),
             weight_kind: self.weight_kind.unwrap_or(WeightKind::Undefined),
             weight_format: self.weight_format.unwrap_or(WeightFormat::Undefined),
             edge_format: self.edge_format.unwrap_or(EdgeFormat::Undefined),
             coord_kind: self.coord_kind.unwrap_or(CoordKind::Undefined),
             disp_kind: self.disp_kind.unwrap_or(DisplayKind::Undefined),
-            node_coords: self.coords,
-            edge_weights: self.edge_weights,
-            disp_coords: self.disp_coords,
-            fixed_edges: self.fixed_edges,
+            node_coords: self.coords.unwrap_or(Vec::new()),
+            demands: self.demands.unwrap_or(Vec::new()),
+            depots: self.depots.unwrap_or(Vec::new()),
+            edge_weights: self.edge_weights.unwrap_or(Vec::new()),
+            disp_coords: self.disp_coords.unwrap_or(Vec::new()),
+            fixed_edges: self.fixed_edges.unwrap_or(Vec::new()),
         })
     }
 }
@@ -743,7 +724,6 @@ pub struct Point {
     z: f64,
 }
 
-// TODO: either use getset or macro for code generation.
 impl Point {
     /// Constructs a new point.
     pub fn new(id: usize, x: f64, y: f64, z: f64) -> Self {
@@ -834,36 +814,36 @@ impl From<&str> for TspKind {
     }
 }
 
-/// Specifies how edge weights should be calculated.
+/// An enum for distance functions defined in the ```TSPLIB``` format.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum WeightKind {
     /// Weights are explicitly given in the data file.
     Explicit,
-    /// Weights are measured through the Euclidean norm in 2D.
+    /// Two-dimensional Euclidean distance.
     Euc2d,
-    /// Weights are measured through the Euclidean norm in 3D.
+    /// Three-dimensional Euclidean distance.
     Euc3d,
-    /// Weights are measured through the maximum norm in 2D.
+    /// Two-dimensional maximum distance.
     Max2d,
-    /// Weights are measured through the maximum norm in 3D.
+    /// Three-dimensional maximum distance.
     Max3d,
-    /// Weights are measured through the Manhattan norm in 2D.
+    /// Two-dimensional Manhattan distance.
     Man2d,
-    /// Weights are measured through the Manhattan norm in 3D.
+    /// Three-dimensional Manhattan distance.
     Man3d,
-    /// Weights are measured through the Euclidean norm in 3D and then rounded up.
+    /// Rounded-up two dimensional Euclidean distance.
     Ceil2d,
-    /// Weights are measured through the geographical distance function.
+    /// Geographical distance.
     Geo,
     /// Special distance function for problems ```att48``` and ```att532```.
     Att,
-    /// Weights are measure through the special function (version 1) for crystallography problems.
+    /// Special distance function for crystallography problems of version 1.
     Xray1,
-    /// Weights are measure through the special function (version 2) for crystallography problems.
+    /// Special distance function for crystallography problems of version 2.
     Xray2,
-    /// The distance function is defined outside the scope of the data file.
+    /// Distance function defined by users.
     Custom,
-    /// The distance function is undefined or not available.
+    /// No distance function is given.
     Undefined,
 }
 
@@ -923,26 +903,46 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum WeightFormat {
     /// Weights are calculated by the function stated in [WeightKind].
+    ///
+    /// Corresponds to the value ```FUNCTION``` in TSPLIB.
     Function,
     /// Weights are given in a full matrix.
+    ///
+    /// Corresponds to the value ```FULL_MATRIX``` in TSPLIB.
     FullMatrix,
     /// Weights are given in an upper triangular matrix, row-wise without diagonal entries.
+    ///
+    /// Corresponds to the value ```UPPER_ROW``` in TSPLIB.
     UpperRow,
     /// Weights are given in a lower triangular matrix, row-wise without diagonal entries.
+    ///
+    /// Corresponds to the value ```LOWE_ROW``` in TSPLIB.
     LowerRow,
     /// Weights are given in an upper triangular matrix, row-wise with diagonal entries.
-    UpperRowDiag,
+    ///
+    /// Corresponds to the value ```UPPER_DIAG_ROW``` in TSPLIB.
+    UpperDiagRow,
     /// Weights are given in a lower triangular matrix, row-wise with diagonal entries.
-    LowerRowDiag,
+    ///
+    /// Corresponds to the value ```LOWER_DIAG_ROW``` in TSPLIB.
+    LowerDiagRow,
     /// Weights are given in an upper triangular matrix, col-wise without diagonal entries.
+    ///
+    /// Corresponds to the value ```UPPER_COL``` in TSPLIB.
     UpperCol,
     /// Weights are given in an lower triangular matrix, col-wise without diagonal entries.
+    ///
+    /// Corresponds to the value ```LOWER_COL``` in TSPLIB.
     LowerCol,
     /// Weights are given in an upper triangular matrix, col-wise with diagonal entries.
-    UpperColDiag,
+    ///
+    /// Corresponds to the value ```UPPER_DIAG_COL``` in TSPLIB.
+    UpperDiagCol,
     /// Weights are given in a lower triangular matrix, col-wise with diagonal entries.
-    LowerColDiag,
-    /// No information how weights are stored.
+    ///
+    /// Corresponds to the value ```LOWER_DIAG_COL``` in TSPLIB.
+    LowerDiagCol,
+    /// No specification how weights are stored.
     Undefined,
 }
 
@@ -953,12 +953,12 @@ impl From<&str> for WeightFormat {
             "FULL_MATRIX" => Self::FullMatrix,
             "UPPER_ROW" => Self::UpperRow,
             "LOWER_ROW" => Self::LowerRow,
-            "UPPER_DIAG_ROW" => Self::UpperRowDiag,
-            "LOWER_DIAG_ROW" => Self::LowerRowDiag,
+            "UPPER_DIAG_ROW" => Self::UpperDiagRow,
+            "LOWER_DIAG_ROW" => Self::LowerDiagRow,
             "UPPER_COL" => Self::UpperCol,
             "LOWER_COL" => Self::LowerCol,
-            "UPPER_DIAG_COL" => Self::UpperColDiag,
-            "LOWER_DIAG_COL" => Self::LowerColDiag,
+            "UPPER_DIAG_COL" => Self::UpperDiagCol,
+            "LOWER_DIAG_COL" => Self::LowerDiagCol,
             _ => Self::Undefined,
         }
     }
@@ -976,12 +976,12 @@ where
             "FULL_MATRIX" => Ok(Self::FullMatrix),
             "UPPER_ROW" => Ok(Self::UpperRow),
             "LOWER_ROW" => Ok(Self::LowerRow),
-            "UPPER_DIAG_ROW" => Ok(Self::UpperRowDiag),
-            "LOWER_DIAG_ROW" => Ok(Self::LowerRowDiag),
+            "UPPER_DIAG_ROW" => Ok(Self::UpperDiagRow),
+            "LOWER_DIAG_ROW" => Ok(Self::LowerDiagRow),
             "UPPER_COL" => Ok(Self::UpperCol),
             "LOWER_COL" => Ok(Self::LowerCol),
-            "UPPER_DIAG_COL" => Ok(Self::UpperColDiag),
-            "LOWER_DIAG_COL" => Ok(Self::LowerColDiag),
+            "UPPER_DIAG_COL" => Ok(Self::UpperDiagCol),
+            "LOWER_DIAG_COL" => Ok(Self::LowerDiagCol),
             _ => Err(ParseTspError::InvalidInput {
                 key: K_WEIGHT_FORMAT.to_string(),
                 val: value.0.as_ref().to_string(),

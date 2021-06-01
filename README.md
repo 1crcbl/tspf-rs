@@ -15,9 +15,9 @@ At the moment I'm focusing on implementing an LKH solver (also in Rust). Thus, m
 The library can currently parse the following problems from TSPLIB:  
 - [X] TSP - symmetric travelling salesman problem  
 - [X] HCP - Hamiltonian cycle problem  
-- [ ] ATSP - asymmetric travelling salesman problem  
+- [X] ATSP - asymmetric travelling salesman problem  
 - [ ] SOP - sequential ordering problem  
-- [ ] CVRP - capacitated vehicle routing problem  
+- [X] CVRP - capacitated vehicle routing problem  
 - [ ] Tour - a collection of tours  
 
 **NOTES**:
