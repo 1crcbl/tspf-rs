@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use tspf::{TspBuilder, TspKind, WeightKind, metric::MetricPoint};
+use tspf::{metric::MetricPoint, TspBuilder, TspKind, WeightKind};
 
 #[test]
 fn parse_vrp() {
@@ -10,7 +10,7 @@ fn parse_vrp() {
     assert_eq!(WeightKind::Euc2d, tsp.weight_kind());
     assert_eq!(6000, tsp.capacity());
     assert_eq!(1, tsp.depots().len());
-    assert_eq!(1, *tsp.depots().first().unwrap());
+    assert!(tsp.depots().contains(&1));
     let pt = tsp.node_coords().get(&21).unwrap();
     assert_eq!(155_f64, pt.x());
     assert_eq!(185_f64, pt.y());

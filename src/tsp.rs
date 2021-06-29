@@ -1,4 +1,11 @@
-use std::{collections::HashMap, convert::TryFrom, fmt::Display, fs::File, io::{BufRead, BufReader}, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryFrom,
+    fmt::Display,
+    fs::File,
+    io::{BufRead, BufReader},
+    path::Path,
+};
 
 use getset::{CopyGetters, Getters};
 
@@ -67,7 +74,9 @@ static K_TOUR_SEC: &str = "TOUR_SECTION";
 ///
 /// The following example shows how to parse a TSP data from string with [`TspBuilder::parse_str`]:
 ///
-/// ```ignore
+/// ```
+/// use tspf::TspBuilder;
+///
 /// let s = "
 /// NAME: test
 /// TYPE: TSP
@@ -88,8 +97,11 @@ static K_TOUR_SEC: &str = "TOUR_SECTION";
 ///
 /// We can also parse a file by calling the function [`TspBuilder::parse_path`]:
 ///
-/// ```ignore
-/// let path = Path::new("./test.tsp");
+/// ```
+/// use tspf::TspBuilder;
+/// use std::path::Path;
+///
+/// let path = Path::new("./tests/data/berlin52.tsp");
 /// let result = TspBuilder::parse_path(path);
 /// assert!(result.is_ok());
 /// ```
@@ -154,7 +166,7 @@ pub struct Tsp {
     ///
     /// Maps to the entry ```DEPOT_SECTION``` in the TSP format.
     #[getset(get = "pub")]
-    depots: Vec<usize>,
+    depots: HashSet<usize>,
     /// Vector of node demands, if available.
     ///
     /// Maps to the entry ```DEMAND_SECTION``` in the TSP format.
@@ -193,15 +205,11 @@ impl Tsp {
             WeightKind::Explicit => match self.weight_format {
                 WeightFormat::Function => 0.,
                 WeightFormat::FullMatrix => self.edge_weights[a][b],
-                WeightFormat::UpperRow | WeightFormat::LowerCol => {
-                    if a == b {
-                        0.
-                    } else if a < b {
-                        self.edge_weights[a][b - a - 1]
-                    } else {
-                        self.edge_weights[b][a - b - 1]
-                    }
-                }
+                WeightFormat::UpperRow | WeightFormat::LowerCol => match a.cmp(&b) {
+                    std::cmp::Ordering::Less => self.edge_weights[a][b - a - 1],
+                    std::cmp::Ordering::Equal => 0.,
+                    std::cmp::Ordering::Greater => self.edge_weights[b][a - b - 1],
+                },
                 WeightFormat::UpperDiagRow | WeightFormat::LowerDiagCol => {
                     if a < b {
                         self.edge_weights[a][b - a]
@@ -209,15 +217,11 @@ impl Tsp {
                         self.edge_weights[b][a - b]
                     }
                 }
-                WeightFormat::LowerRow | WeightFormat::UpperCol => {
-                    if a == b {
-                        0.
-                    } else if a < b {
-                        self.edge_weights[b - 1][a]
-                    } else {
-                        self.edge_weights[a - 1][b]
-                    }
-                }
+                WeightFormat::LowerRow | WeightFormat::UpperCol => match a.cmp(&b) {
+                    std::cmp::Ordering::Less => self.edge_weights[b - 1][a],
+                    std::cmp::Ordering::Equal => 0.,
+                    std::cmp::Ordering::Greater => self.edge_weights[a - 1][b],
+                },
                 WeightFormat::LowerDiagRow | WeightFormat::UpperDiagCol => {
                     if a < b {
                         self.edge_weights[b][a]
@@ -276,7 +280,7 @@ pub struct TspBuilder {
     disp_kind: Option<DisplayKind>,
     // Data
     coords: Option<HashMap<usize, Point>>,
-    depots: Option<Vec<usize>>,
+    depots: Option<HashSet<usize>>,
     demands: Option<HashMap<usize, f64>>,
     edge_weights: Option<Vec<Vec<f64>>>,
     disp_coords: Option<Vec<Point>>,
@@ -301,7 +305,7 @@ impl TspBuilder {
     where
         S: AsRef<str>,
     {
-        let mut itr = s.as_ref().lines().map(|l| l);
+        let mut itr = s.as_ref().lines();
         Self::parse_it(&mut itr)
     }
 
@@ -332,7 +336,7 @@ impl TspBuilder {
         <I as Iterator>::Item: AsRef<str>,
     {
         let splitter = |s: &str| {
-            let val = s.split(":").collect::<Vec<&str>>();
+            let val = s.split(':').collect::<Vec<&str>>();
             String::from(val[1].trim())
         };
 
@@ -340,7 +344,7 @@ impl TspBuilder {
 
         while let Some(line) = itr.next() {
             let line = line.as_ref().trim();
-            if line.len() == 0 {
+            if line.is_empty() {
                 continue;
             }
             if line.starts_with("EOF") {
@@ -360,7 +364,7 @@ impl TspBuilder {
                 builder.capacity = Some(splitter(&line).parse::<usize>().unwrap());
             } else if line.starts_with(K_WEIGHT_TYPE) {
                 let kind = WeightKind::try_from(InputWrapper(splitter(&line).as_str()))?;
-                builder.weight_kind = Some(kind.clone());
+                builder.weight_kind = Some(kind);
                 builder.coord_kind = Some(CoordKind::from(kind));
             } else if line.starts_with(K_WEIGHT_FORMAT) {
                 builder.weight_format = Some(WeightFormat::try_from(InputWrapper(
@@ -409,30 +413,25 @@ impl TspBuilder {
     {
         self.validate_spec()?;
 
-        let mut func: Box<dyn FnMut(&Vec<&str>, &mut HashMap<usize, Point>)> = match &self.coord_kind.unwrap()
-        {
+        let func: Box<dyn Fn(&Vec<&str>) -> Point> = match &self.coord_kind.unwrap() {
             CoordKind::Coord2d => {
-                let f = |v: &Vec<&str>, r: &mut HashMap<usize, Point>| {
-                    let p = Point::from((
+                let f = |v: &Vec<&str>| {
+                    Point::from((
                         v[0].parse::<usize>().unwrap(),
                         v[1].parse::<f64>().unwrap(),
                         v[2].parse::<f64>().unwrap(),
-                    ));
-
-                    r.insert(p.id, p);
+                    ))
                 };
                 Box::new(f)
             }
             CoordKind::Coord3d => {
-                let f = |v: &Vec<&str>, r: &mut HashMap<usize, Point>| {
-                    let p = Point::from((
+                let f = |v: &Vec<&str>| {
+                    Point::from((
                         v[0].parse::<usize>().unwrap(),
                         v[1].parse::<f64>().unwrap(),
                         v[2].parse::<f64>().unwrap(),
                         v[3].parse::<f64>().unwrap(),
-                    ));
-
-                    r.insert(p.id, p);
+                    ))
                 };
                 Box::new(f)
             }
@@ -448,14 +447,14 @@ impl TspBuilder {
         while count < dim {
             // TODO: replace unwrap()
             let line = lines_it.next().unwrap();
-            func(
+            let pt = func(
                 &line
                     .as_ref()
                     .trim()
                     .split_whitespace()
                     .collect::<Vec<&str>>(),
-                &mut dta,
             );
+            dta.insert(pt.id, pt);
             count += 1;
         }
 
@@ -472,7 +471,7 @@ impl TspBuilder {
     {
         self.validate_spec()?;
 
-        let mut dta = Vec::new();
+        let mut dta = HashSet::new();
 
         loop {
             let line = lines_it.next().unwrap();
@@ -480,7 +479,7 @@ impl TspBuilder {
                 break;
             }
 
-            dta.push(line.as_ref().trim().parse::<usize>().unwrap());
+            dta.insert(line.as_ref().trim().parse::<usize>().unwrap());
         }
 
         self.depots = Some(dta);
@@ -536,7 +535,9 @@ impl TspBuilder {
                 v.append(&mut dta);
             }
             EdgeFormat::AdjList => todo!(),
-            EdgeFormat::Undefined => Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))?,
+            EdgeFormat::Undefined => {
+                return Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))
+            }
         }
 
         Ok(())
@@ -632,7 +633,7 @@ impl TspBuilder {
         let dim = self.dim.unwrap();
 
         // TODO: check memory consumption for large files.
-        let (len_vec, cnt, mut it): (usize, usize, Box<dyn Iterator<Item = usize>>) =
+        let (len_vec, cnt, it): (usize, usize, Box<dyn Iterator<Item = usize>>) =
             match self.weight_format.unwrap() {
                 WeightFormat::Function => (0, 0, Box::new(std::iter::empty::<usize>())),
                 WeightFormat::FullMatrix => {
@@ -674,7 +675,7 @@ impl TspBuilder {
             v.remove(0);
         }
 
-        while let Some(len_row) = it.next() {
+        for len_row in it {
             dta.push(v.drain(0..len_row).collect());
         }
 
@@ -725,39 +726,47 @@ impl TspBuilder {
                 match kind {
                     TspKind::Tsp | TspKind::Atsp | TspKind::Cvrp | TspKind::Sop => {
                         match self.weight_kind {
-                            Some(wk) => match wk {
-                                WeightKind::Undefined => {
-                                    Err(ParseTspError::InvalidEntry(String::from(K_WEIGHT_TYPE)))?
+                            Some(wk) => {
+                                if wk == WeightKind::Undefined {
+                                    return Err(ParseTspError::InvalidEntry(String::from(
+                                        K_WEIGHT_TYPE,
+                                    )));
                                 }
-                                _ => {}
-                            },
-                            None => Err(ParseTspError::MissingEntry(String::from(K_WEIGHT_TYPE)))?,
+                            }
+                            None => {
+                                return Err(ParseTspError::MissingEntry(String::from(
+                                    K_WEIGHT_TYPE,
+                                )))
+                            }
                         }
 
-                        if kind == TspKind::Cvrp {
-                            if self.capacity.is_none() {
-                                return Err(ParseTspError::MissingEntry(String::from(K_CAP)));
-                            }
+                        if kind == TspKind::Cvrp && self.capacity.is_none() {
+                            return Err(ParseTspError::MissingEntry(String::from(K_CAP)));
                         }
                     }
                     TspKind::Hcp => match self.edge_format {
-                        Some(ref ef) => match ef {
-                            EdgeFormat::Undefined => {
-                                Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))?
+                        Some(ref ef) => {
+                            if ef == &EdgeFormat::Undefined {
+                                return Err(ParseTspError::InvalidEntry(String::from(
+                                    K_EDGE_FORMAT,
+                                )));
                             }
-                            _ => {}
-                        },
-                        None => Err(ParseTspError::MissingEntry(String::from(K_EDGE_FORMAT)))?,
+                        }
+                        None => {
+                            return Err(ParseTspError::MissingEntry(String::from(K_EDGE_FORMAT)))
+                        }
                     },
                     TspKind::Tour => {}
-                    TspKind::Undefined => Err(ParseTspError::InvalidEntry(String::from(K_TYPE)))?,
+                    TspKind::Undefined => {
+                        return Err(ParseTspError::InvalidEntry(String::from(K_TYPE)))
+                    }
                 }
 
                 if kind != TspKind::Tour && self.dim.is_none() {
                     return Err(ParseTspError::MissingEntry(String::from(K_DIM)));
                 }
             }
-            None => Err(ParseTspError::MissingEntry(String::from(K_TYPE)))?,
+            None => return Err(ParseTspError::MissingEntry(String::from(K_TYPE))),
         }
 
         Ok(())
@@ -769,12 +778,12 @@ impl TspBuilder {
             TspKind::Tsp | TspKind::Atsp | TspKind::Cvrp => match self.weight_kind.unwrap() {
                 WeightKind::Explicit => {
                     if self.edge_weights.is_none() {
-                        Err(ParseTspError::MissingEntry(String::from(K_EDGE_WEIGHT_SEC)))?
+                        return Err(ParseTspError::MissingEntry(String::from(K_EDGE_WEIGHT_SEC)));
                     }
                 }
                 _ => {
                     if self.coords.is_none() {
-                        Err(ParseTspError::MissingEntry(String::from(K_NODE_COORD_SEC)))?
+                        return Err(ParseTspError::MissingEntry(String::from(K_NODE_COORD_SEC)));
                     }
                 }
             },
@@ -782,7 +791,7 @@ impl TspBuilder {
             TspKind::Hcp => {}
             TspKind::Tour => {
                 if self.tours.is_none() {
-                    Err(ParseTspError::MissingEntry(String::from(K_TOUR_SEC)))?
+                    return Err(ParseTspError::MissingEntry(String::from(K_TOUR_SEC)));
                 }
             }
             TspKind::Undefined => {}
@@ -815,7 +824,7 @@ impl TspBuilder {
         let tsp = Tsp {
             name: self.name.unwrap(),
             kind: self.kind.unwrap(),
-            comment: self.comment.unwrap_or(String::new()),
+            comment: self.comment.unwrap_or_else(String::new),
             dim: self.dim.unwrap_or(0),
             capacity: self.capacity.unwrap_or(0),
             weight_kind: self.weight_kind.unwrap_or(WeightKind::Undefined),
@@ -823,13 +832,13 @@ impl TspBuilder {
             edge_format: self.edge_format.unwrap_or(EdgeFormat::Undefined),
             coord_kind: self.coord_kind.unwrap_or(CoordKind::Undefined),
             disp_kind: self.disp_kind.unwrap_or(DisplayKind::Undefined),
-            node_coords: self.coords.unwrap_or(HashMap::with_capacity(0)),
-            demands: self.demands.unwrap_or(HashMap::with_capacity(0)),
-            depots: self.depots.unwrap_or(Vec::with_capacity(0)),
-            edge_weights: self.edge_weights.unwrap_or(Vec::with_capacity(0)),
-            disp_coords: self.disp_coords.unwrap_or(Vec::with_capacity(0)),
-            fixed_edges: self.fixed_edges.unwrap_or(Vec::with_capacity(0)),
-            tours: self.tours.unwrap_or(Vec::with_capacity(0)),
+            node_coords: self.coords.unwrap_or_else(|| HashMap::with_capacity(0)),
+            demands: self.demands.unwrap_or_else(|| HashMap::with_capacity(0)),
+            depots: self.depots.unwrap_or_else(|| HashSet::with_capacity(0)),
+            edge_weights: self.edge_weights.unwrap_or_else(|| Vec::with_capacity(0)),
+            disp_coords: self.disp_coords.unwrap_or_else(|| Vec::with_capacity(0)),
+            fixed_edges: self.fixed_edges.unwrap_or_else(|| Vec::with_capacity(0)),
+            tours: self.tours.unwrap_or_else(|| Vec::with_capacity(0)),
         };
 
         Ok(tsp)

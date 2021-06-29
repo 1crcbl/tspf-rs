@@ -1,8 +1,7 @@
-#![allow(unused_imports, dead_code)]
-use std::{ffi::OsStr, path::Path};
-
+#![cfg(test)]
 use crate::{metric::*, Tsp, WeightFormat};
 use crate::{TspBuilder, TspKind, WeightKind};
+use approx::assert_relative_eq;
 
 const TEST_STR: &str = "
 NAME: test
@@ -109,12 +108,12 @@ macro_rules! prep_weight {
 }
 
 fn test_weight(tsp: Tsp) {
-    assert_eq!(5., tsp.weight(1, 2));
-    assert_eq!(10., tsp.weight(4, 3));
-    assert_eq!(10., tsp.weight(3, 4));
-    assert_eq!(9., tsp.weight(4, 2));
-    assert_eq!(9., tsp.weight(2, 4));
-    assert_eq!(0., tsp.weight(4, 4));
+    assert_relative_eq!(5_f64, tsp.weight(1, 2));
+    assert_relative_eq!(10., tsp.weight(4, 3));
+    assert_relative_eq!(10., tsp.weight(3, 4));
+    assert_relative_eq!(9., tsp.weight(4, 2));
+    assert_relative_eq!(9., tsp.weight(2, 4));
+    assert_relative_eq!(0., tsp.weight(4, 4));
 }
 
 #[test]
