@@ -1,10 +1,4 @@
-use std::{
-    convert::TryFrom,
-    fmt::Display,
-    fs::File,
-    io::{BufRead, BufReader},
-    path::Path,
-};
+use std::{collections::HashMap, convert::TryFrom, fmt::Display, fs::File, io::{BufRead, BufReader}, path::Path};
 
 use getset::{CopyGetters, Getters};
 
@@ -155,7 +149,7 @@ pub struct Tsp {
     ///
     /// Maps to the entry ```NODE_COORD_SECTION``` in the TSP format.
     #[getset(get = "pub")]
-    node_coords: Vec<Point>,
+    node_coords: HashMap<usize, Point>,
     /// Vector of depot nodes' id, if available.
     ///
     /// Maps to the entry ```DEPOT_SECTION``` in the TSP format.
@@ -165,7 +159,7 @@ pub struct Tsp {
     ///
     /// Maps to the entry ```DEMAND_SECTION``` in the TSP format.
     #[getset(get = "pub")]
-    demands: Vec<(usize, usize)>,
+    demands: HashMap<usize, f64>,
     /// Vector of edges that *must* appear in solutions to the problem.
     ///
     /// Maps to the entry ```FIXED_EDGES_SECTION``` in the TSP format.
@@ -234,7 +228,7 @@ impl Tsp {
                 WeightFormat::Undefined => 0.,
             },
             _ => {
-                if let (Some(na), Some(nb)) = (self.node_coords.get(a), self.node_coords.get(b)) {
+                if let (Some(na), Some(nb)) = (self.node_coords.get(&a), self.node_coords.get(&b)) {
                     self.weight_kind.cost(na, nb)
                 } else {
                     0.
@@ -281,9 +275,9 @@ pub struct TspBuilder {
     coord_kind: Option<CoordKind>,
     disp_kind: Option<DisplayKind>,
     // Data
-    coords: Option<Vec<Point>>,
+    coords: Option<HashMap<usize, Point>>,
     depots: Option<Vec<usize>>,
-    demands: Option<Vec<(usize, usize)>>,
+    demands: Option<HashMap<usize, f64>>,
     edge_weights: Option<Vec<Vec<f64>>>,
     disp_coords: Option<Vec<Point>>,
     fixed_edges: Option<Vec<(usize, usize)>>,
@@ -415,22 +409,22 @@ impl TspBuilder {
     {
         self.validate_spec()?;
 
-        let mut func: Box<dyn FnMut(&Vec<&str>, &mut Vec<Point>)> = match &self.coord_kind.unwrap()
+        let mut func: Box<dyn FnMut(&Vec<&str>, &mut HashMap<usize, Point>)> = match &self.coord_kind.unwrap()
         {
             CoordKind::Coord2d => {
-                let f = |v: &Vec<&str>, r: &mut Vec<Point>| {
+                let f = |v: &Vec<&str>, r: &mut HashMap<usize, Point>| {
                     let p = Point::from((
                         v[0].parse::<usize>().unwrap(),
                         v[1].parse::<f64>().unwrap(),
                         v[2].parse::<f64>().unwrap(),
                     ));
 
-                    r.push(p);
+                    r.insert(p.id, p);
                 };
                 Box::new(f)
             }
             CoordKind::Coord3d => {
-                let f = |v: &Vec<&str>, r: &mut Vec<Point>| {
+                let f = |v: &Vec<&str>, r: &mut HashMap<usize, Point>| {
                     let p = Point::from((
                         v[0].parse::<usize>().unwrap(),
                         v[1].parse::<f64>().unwrap(),
@@ -438,7 +432,7 @@ impl TspBuilder {
                         v[3].parse::<f64>().unwrap(),
                     ));
 
-                    r.push(p);
+                    r.insert(p.id, p);
                 };
                 Box::new(f)
             }
@@ -449,7 +443,7 @@ impl TspBuilder {
 
         let mut count = 0;
         let dim = self.dim.unwrap();
-        let mut dta = Vec::with_capacity(dim);
+        let mut dta = HashMap::with_capacity(dim);
 
         while count < dim {
             // TODO: replace unwrap()
@@ -502,13 +496,13 @@ impl TspBuilder {
     {
         self.validate_spec()?;
 
-        let mut dta = Vec::new();
+        let mut dta = HashMap::new();
 
         for _ in 0..self.dim.unwrap() {
             let line = lines_it.next().unwrap();
             let mut it = line.as_ref().trim().split_whitespace();
             if let (Some(id), Some(de)) = (it.next(), it.next()) {
-                dta.push((id.parse::<usize>().unwrap(), de.parse::<usize>().unwrap()));
+                dta.insert(id.parse::<usize>().unwrap(), de.parse::<f64>().unwrap());
             }
         }
 
@@ -818,7 +812,7 @@ impl TspBuilder {
         self.validate_spec()?;
         self.validate_data()?;
 
-        Ok(Tsp {
+        let tsp = Tsp {
             name: self.name.unwrap(),
             kind: self.kind.unwrap(),
             comment: self.comment.unwrap_or(String::new()),
@@ -829,14 +823,16 @@ impl TspBuilder {
             edge_format: self.edge_format.unwrap_or(EdgeFormat::Undefined),
             coord_kind: self.coord_kind.unwrap_or(CoordKind::Undefined),
             disp_kind: self.disp_kind.unwrap_or(DisplayKind::Undefined),
-            node_coords: self.coords.unwrap_or(Vec::with_capacity(0)),
-            demands: self.demands.unwrap_or(Vec::with_capacity(0)),
+            node_coords: self.coords.unwrap_or(HashMap::with_capacity(0)),
+            demands: self.demands.unwrap_or(HashMap::with_capacity(0)),
             depots: self.depots.unwrap_or(Vec::with_capacity(0)),
             edge_weights: self.edge_weights.unwrap_or(Vec::with_capacity(0)),
             disp_coords: self.disp_coords.unwrap_or(Vec::with_capacity(0)),
             fixed_edges: self.fixed_edges.unwrap_or(Vec::with_capacity(0)),
             tours: self.tours.unwrap_or(Vec::with_capacity(0)),
-        })
+        };
+
+        Ok(tsp)
     }
 }
 
