@@ -9,7 +9,7 @@ use std::{
 
 use getset::{CopyGetters, Getters};
 
-use crate::{error::ParseTspError, metric::MetricPoint};
+use crate::error::ParseTspError;
 
 // (Some) keywords for data specification part.
 static K_NAME: &str = "NAME";
@@ -233,7 +233,7 @@ impl Tsp {
             },
             _ => {
                 if let (Some(na), Some(nb)) = (self.node_coords.get(&a), self.node_coords.get(&b)) {
-                    self.weight_kind.cost(na, nb)
+                    self.weight_kind.cost(na.pos(), nb.pos())
                 } else {
                     0.
                 }
@@ -416,22 +416,22 @@ impl TspBuilder {
         let func: Box<dyn Fn(&Vec<&str>) -> Point> = match &self.coord_kind.unwrap() {
             CoordKind::Coord2d => {
                 let f = |v: &Vec<&str>| {
-                    Point::from((
+                    Point::new2(
                         v[0].parse::<usize>().unwrap(),
                         v[1].parse::<f64>().unwrap(),
                         v[2].parse::<f64>().unwrap(),
-                    ))
+                    )
                 };
                 Box::new(f)
             }
             CoordKind::Coord3d => {
                 let f = |v: &Vec<&str>| {
-                    Point::from((
+                    Point::new3(
                         v[0].parse::<usize>().unwrap(),
                         v[1].parse::<f64>().unwrap(),
                         v[2].parse::<f64>().unwrap(),
                         v[3].parse::<f64>().unwrap(),
-                    ))
+                    )
                 };
                 Box::new(f)
             }
@@ -701,11 +701,11 @@ impl TspBuilder {
                 .trim()
                 .split_whitespace()
                 .collect::<Vec<&str>>();
-            dta.push(Point::from((
+            dta.push(Point::new2(
                 v[0].parse::<usize>().unwrap(),
                 v[1].parse::<f64>().unwrap(),
                 v[2].parse::<f64>().unwrap(),
-            )));
+            ));
 
             count += 1;
         }
@@ -849,48 +849,38 @@ impl TspBuilder {
 struct InputWrapper<T>(T);
 
 /// Represents a node coordinate.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Point {
     /// Id of a point.
     id: usize,
-    /// x coordinate.
-    x: f64,
-    /// y coordinate
-    y: f64,
-    /// z coordinate
-    z: f64,
+    /// Point's coordinates.
+    pos: Vec<f64>,
 }
 
 impl Point {
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn pos(&self) -> &Vec<f64> {
+        &self.pos
+    }
+
+    pub fn into_value(self) -> (usize, Vec<f64>) {
+        (self.id, self.pos)
+    }
+
     /// Constructs a new point.
-    pub fn new(id: usize, x: f64, y: f64, z: f64) -> Self {
-        Self { id, x, y, z }
-    }
-}
-
-impl MetricPoint for Point {
-    fn x(&self) -> f64 {
-        self.x
+    pub fn new(id: usize, pos: Vec<f64>) -> Self {
+        Self { id, pos }
     }
 
-    fn y(&self) -> f64 {
-        self.y
+    pub fn new2(id: usize, x: f64, y: f64) -> Self {
+        Self::new(id, vec![x, y])
     }
 
-    fn z(&self) -> f64 {
-        self.z
-    }
-}
-
-impl From<(usize, f64, f64)> for Point {
-    fn from(data: (usize, f64, f64)) -> Self {
-        Self::new(data.0, data.1, data.2, 0.)
-    }
-}
-
-impl From<(usize, f64, f64, f64)> for Point {
-    fn from(data: (usize, f64, f64, f64)) -> Self {
-        Self::new(data.0, data.1, data.2, data.3)
+    pub fn new3(id: usize, x: f64, y: f64, z: f64) -> Self {
+        Self::new(id, vec![x, y, z])
     }
 }
 

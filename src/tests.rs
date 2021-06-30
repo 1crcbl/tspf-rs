@@ -221,28 +221,36 @@ fn test_tour() {
 
 #[test]
 fn test_metric_fn() {
-    assert_eq!(5., euc_2d(6., 0., 3., 4.), "Test euc_2d");
+    assert_eq!(5., euc_2d(&vec![6., 0.], &vec![3., 4.]), "Test euc_2d");
     assert_eq!(
         5. * (2 as f64).sqrt(),
-        euc_3d(6., 0., -2., 3., 4., 3.),
+        euc_3d(&vec![6., 0., -2.], &vec![3., 4., 3.]),
         "Test euc_3d"
     );
-    assert_eq!(7., man_2d(6., 0., 3., 4.), "Test man_2d");
-    assert_eq!(12., man_3d(6., 0., -2., 3., 4., 3.), "Test man_3d");
-    assert_eq!(4., max_2d(6., 0., 3., 4.), "Test max_2d");
-    assert_eq!(5., max_3d(6., 0., -2., 3., 4., 3.), "Test max_3d");
+    assert_eq!(7., man_2d(&vec![6., 0.], &vec![3., 4.]), "Test man_2d");
+    assert_eq!(
+        12.,
+        man_3d(&vec![6., 0., -2.], &vec![3., 4., 3.]),
+        "Test man_3d"
+    );
+    assert_eq!(4., max_2d(&vec![6., 0.], &vec![3., 4.]), "Test max_2d");
+    assert_eq!(
+        5.,
+        max_3d(&vec![6., 0., -2.], &vec![3., 4., 3.]),
+        "Test max_3d"
+    );
 
-    let eps = geo(89.6, -74.6, -29.6, -14.6) - 13359.864588;
+    let eps = geo(&vec![89.6, -74.6], &vec![-29.6, -14.6]) - 13359.864588;
     assert!(eps.abs() < 1e-6, "Test geo");
     // 13359.864588
     assert_eq!(
         18000.,
-        xray1(360., 75., -55., 180., -45., 22.),
+        xray1(&vec![360., 75., -55.], &vec![180., -45., 22.]),
         "Test xray1"
     );
     assert_eq!(
         14400.,
-        xray2(360., 75., -55., 180., -45., 22.),
+        xray2(&vec![360., 75., -55.], &vec![180., -45., 22.]),
         "Test xray2"
     );
 }
