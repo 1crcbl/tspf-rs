@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use getset::{CopyGetters, Getters};
+use getset::{CopyGetters, Getters, MutGetters};
 
 use crate::error::ParseTspError;
 
@@ -105,7 +105,7 @@ static K_TOUR_SEC: &str = "TOUR_SECTION";
 /// let result = TspBuilder::parse_path(path);
 /// assert!(result.is_ok());
 /// ```
-#[derive(Debug, CopyGetters, Getters)]
+#[derive(Debug, CopyGetters, Getters, MutGetters)]
 pub struct Tsp {
     /// Name of the dataset.
     ///
@@ -131,7 +131,7 @@ pub struct Tsp {
     ///
     /// Maps to the entry ```CAPACITY``` in the TSP format.
     #[getset(get_copy = "pub")]
-    capacity: usize,
+    capacity: f64,
     /// Specifier for how the edge weights are calculated.
     ///
     /// Maps to the entry ```EDGE_WEIGHT_TYPE``` in the TSP format.
@@ -160,37 +160,37 @@ pub struct Tsp {
     /// Vector of node coordinates, if available.
     ///
     /// Maps to the entry ```NODE_COORD_SECTION``` in the TSP format.
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     node_coords: HashMap<usize, Point>,
     /// Vector of depot nodes' id, if available.
     ///
     /// Maps to the entry ```DEPOT_SECTION``` in the TSP format.
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     depots: HashSet<usize>,
     /// Vector of node demands, if available.
     ///
     /// Maps to the entry ```DEMAND_SECTION``` in the TSP format.
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     demands: HashMap<usize, f64>,
     /// Vector of edges that *must* appear in solutions to the problem.
     ///
     /// Maps to the entry ```FIXED_EDGES_SECTION``` in the TSP format.
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     fixed_edges: Vec<(usize, usize)>,
     /// A vector of 2D node coordinates for display purpose, if available.
     ///
     /// Maps to the entry ```DISPLAY_DATA_SECTION``` in the TSP format.
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     disp_coords: Vec<Point>,
     /// Edge weights in a matrix form as stated in ```EDGE_WEIGHT_FORMAT```, if available.
     ///
     /// Maps to the entry ```EDGE_WEIGHT_SECTION``` in the TSP format.
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     edge_weights: Vec<Vec<f64>>,
     /// A collection of tours (a sequence of nodes).
     ///
     /// Maps to the entry ```TOUR_SECTION``` in the TSP format.
-    #[getset(get = "pub")]
+    #[getset(get = "pub", get_mut = "pub")]
     tours: Vec<Vec<usize>>,
 }
 
@@ -272,7 +272,7 @@ pub struct TspBuilder {
     kind: Option<TspKind>,
     comment: Option<String>,
     dim: Option<usize>,
-    capacity: Option<usize>,
+    capacity: Option<f64>,
     weight_kind: Option<WeightKind>,
     weight_format: Option<WeightFormat>,
     edge_format: Option<EdgeFormat>,
@@ -361,7 +361,7 @@ impl TspBuilder {
             } else if line.starts_with(K_DIM) {
                 builder.dim = Some(splitter(&line).parse::<usize>().unwrap());
             } else if line.starts_with("CAPACITY") {
-                builder.capacity = Some(splitter(&line).parse::<usize>().unwrap());
+                builder.capacity = Some(splitter(&line).parse::<f64>().unwrap());
             } else if line.starts_with(K_WEIGHT_TYPE) {
                 let kind = WeightKind::try_from(InputWrapper(splitter(&line).as_str()))?;
                 builder.weight_kind = Some(kind);
@@ -826,7 +826,7 @@ impl TspBuilder {
             kind: self.kind.unwrap(),
             comment: self.comment.unwrap_or_else(String::new),
             dim: self.dim.unwrap_or(0),
-            capacity: self.capacity.unwrap_or(0),
+            capacity: self.capacity.unwrap_or(0.),
             weight_kind: self.weight_kind.unwrap_or(WeightKind::Undefined),
             weight_format: self.weight_format.unwrap_or(WeightFormat::Undefined),
             edge_format: self.edge_format.unwrap_or(EdgeFormat::Undefined),

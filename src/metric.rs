@@ -8,8 +8,7 @@ impl WeightKind {
     /// Calculates and returns the cost (or distance) between two points.
     ///
     /// For [`WeightKind::Custom`] and [`WeightKind::Undefined`], the function will always return ```0.```.
-    pub fn cost(&self, a: &[f64], b: &[f64]) -> f64
-where {
+    pub fn cost(&self, a: &[f64], b: &[f64]) -> f64 {
         match self {
             Self::Euc2d => euc_2d(a, b),
             Self::Euc3d => euc_3d(a, b),

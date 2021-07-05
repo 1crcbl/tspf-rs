@@ -8,7 +8,7 @@ fn parse_vrp() {
     assert_eq!(TspKind::Cvrp, tsp.kind());
     assert_eq!(22, tsp.dim());
     assert_eq!(WeightKind::Euc2d, tsp.weight_kind());
-    assert_eq!(6000, tsp.capacity());
+    assert_eq!(6000., tsp.capacity());
     assert_eq!(1, tsp.depots().len());
     assert!(tsp.depots().contains(&1));
     let pt = tsp.node_coords().get(&21).unwrap();
