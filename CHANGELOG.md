@@ -1,5 +1,8 @@
 # TSPF - CHANGELOG
 
+## Version 0.3.1
+- Change in return data types for several getters.
+
 ## Version 0.3.0
 - Implement parsing for ATSP, CVRSP, SOP and TOUR files
 - Implement distance functions

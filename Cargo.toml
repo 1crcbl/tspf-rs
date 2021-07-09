@@ -1,6 +1,6 @@
 [package]
 name = "tspf"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["1crcbl <1crcbl@protonmail.com>"]
 edition = "2018"
 
